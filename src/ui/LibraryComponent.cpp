@@ -99,7 +99,7 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     addAndMakeVisible(folderTree);
 
     // 3. Center Table Area Header
-    tableHeaderTitle.setText(juce::String::fromUTF8("Todas las Pistas  5 Canciones"), juce::dontSendNotification);
+    tableHeaderTitle.setText(juce::String::fromUTF8("Todas las Pistas  0 Canciones"), juce::dontSendNotification);
     tableHeaderTitle.setFont(juce::FontOptions(12.5f, juce::Font::bold));
     tableHeaderTitle.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(tableHeaderTitle);
@@ -190,58 +190,6 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     addAndMakeVisible(queueTitle);
 
     setWantsKeyboardFocus(true);
-
-    // Ensure default DiscPro synthesized demo tracks are present on startup
-    auto samplesDir = juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("DiscPro_Samples");
-    std::vector<juce::File> demoFiles;
-    SampleTrackGenerator::ensureDefaultDemoTracks(samplesDir, demoFiles);
-    for (const auto& df : demoFiles)
-    {
-        addTrack(df, "Demos DiscPro", {}, true);
-    }
-
-    // Add extra initial tracks matching DiscPro INITIAL_DEMO_TRACKS list
-    if (allTracks.size() < 5)
-    {
-        TrackItem t3;
-        t3.id = "3";
-        t3.title = "El Murguero (Club Edit)";
-        t3.artist = juce::String::fromUTF8("Los Auténticos Rmx");
-        t3.album = "Carioca Fiesta";
-        t3.bpm = 115.0;
-        t3.key = "11A";
-        t3.duration = 180.0;
-        t3.file = samplesDir.getChildFile("DiscPro_Latin_Tech_Groove.wav");
-        t3.folder = "Demos DiscPro";
-        t3.isDemo = true;
-        allTracks.push_back(t3);
-
-        TrackItem t4;
-        t4.id = "4";
-        t4.title = "Los Piratas (Original Remaster)";
-        t4.artist = juce::String::fromUTF8("Auténticos Sonideros");
-        t4.album = "Carioca Fiesta";
-        t4.bpm = 140.0;
-        t4.key = "11A";
-        t4.duration = 165.0;
-        t4.file = samplesDir.getChildFile("DiscPro_Latin_Tech_Groove.wav");
-        t4.folder = "Demos DiscPro";
-        t4.isDemo = true;
-        allTracks.push_back(t4);
-
-        TrackItem t5;
-        t5.id = "5";
-        t5.title = "Cyberfunk Peak Time";
-        t5.artist = "Trax Modular";
-        t5.album = "Berlin Under";
-        t5.bpm = 128.0;
-        t5.key = "4A";
-        t5.duration = 75.0;
-        t5.file = samplesDir.getChildFile("Sunset_Beach_House_Mix.wav");
-        t5.folder = "Demos DiscPro";
-        t5.isDemo = true;
-        allTracks.push_back(t5);
-    }
 
     filteredTracks = allTracks;
     folderTree.updateTree(allTracks);
@@ -465,10 +413,6 @@ void LibraryComponent::filterTracks(const juce::String& query)
         if (currentSelectedFolder == "Todas las Pistas")
         {
             matchesFolder = true;
-        }
-        else if (currentSelectedFolder == "Demos DiscPro")
-        {
-            matchesFolder = (t.isDemo || t.folder == "Demos DiscPro");
         }
         else
         {

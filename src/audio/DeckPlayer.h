@@ -92,8 +92,8 @@ private:
     std::atomic<bool> playing { false };
     std::atomic<double> trackDurationSeconds { 0.0 };
     std::atomic<double> cuePositionSeconds { 0.0 };
-    std::atomic<double> originalBpm { 124.0 };
-    std::atomic<double> currentBpm { 124.0 };
+    std::atomic<double> originalBpm { 0.0 };
+    std::atomic<double> currentBpm { 0.0 };
 
     std::atomic<float> pitchPercent { 0.0f };
     std::atomic<float> pitchBend { 0.0f };

@@ -329,28 +329,12 @@ void FolderTreeComponent::updateTree(const std::vector<TrackItem>& tracks)
     allPistas.isSystem = true;
     rootNodes.push_back(allPistas);
 
-    // 2. Root Node: Demos DiscPro
-    FolderNode demos;
-    demos.name = "Demos DiscPro";
-    demos.fullPath = "Demos DiscPro";
-    demos.depth = 0;
-    demos.isSystem = true;
-    int demoCount = 0;
-    for (const auto& t : tracks)
-    {
-        if (t.isDemo || t.folder == "Demos DiscPro")
-            demoCount++;
-    }
-    demos.directCount = demoCount;
-    demos.totalCount = demoCount;
-    rootNodes.push_back(demos);
-
-    // 3. Hierarchical User Folders
+    // 2. Hierarchical User Folders
     std::map<juce::String, std::shared_ptr<TempNode>> rootChildrenMap;
 
     for (const auto& t : tracks)
     {
-        if (t.isDemo || t.folder == "Demos DiscPro" || t.folder == "Todas las Pistas")
+        if (t.isDemo || t.folder == "Todas las Pistas")
             continue;
 
         juce::String rawFolder = t.folder.trim();

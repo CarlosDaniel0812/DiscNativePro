@@ -11,9 +11,9 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
 {
     pitchSlider.setLookAndFeel(&djLookAndFeel);
 
-    juce::String initialTitle = (deckIndex == 0) ? "DiscPro Latin Tech Groove" : "Sunset Beach House Mix";
-    juce::String initialArtist = (deckIndex == 0) ? "Axel Molina & DiscPro Sound" : "Deep Horizon";
-    double initialBpm = (deckIndex == 0) ? 124.0 : 126.0;
+    juce::String initialTitle = (deckIndex == 0) ? "Bandeja 1" : "Bandeja 2";
+    juce::String initialArtist = "Sin pista cargada";
+    double initialBpm = 0.0;
 
     coverArtImage = CoverArtGenerator::getCoverForTrack(initialTitle, 256);
     jogWheel.setTrackInfo(initialTitle, initialBpm, accent);
@@ -30,21 +30,21 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
     addAndMakeVisible(artistLabel);
 
     // Right Header Metadata: Time Remaining, Key Badge, BPM
-    timeRemainingLabel.setText(deckIndex == 0 ? "-01:01.9" : "-01:00.9", juce::dontSendNotification);
+    timeRemainingLabel.setText("00:00.0", juce::dontSendNotification);
     timeRemainingLabel.setFont(juce::FontOptions(13.5f, juce::Font::bold));
     timeRemainingLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     timeRemainingLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(timeRemainingLabel);
 
-    keyBadge.setText(deckIndex == 0 ? "8A" : "11A", juce::dontSendNotification);
+    keyBadge.setText("--", juce::dontSendNotification);
     keyBadge.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-    keyBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
-    keyBadge.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(0, 229, 255).withAlpha(0.15f));
-    keyBadge.setColour(juce::Label::outlineColourId, juce::Colour::fromRGB(0, 229, 255).withAlpha(0.35f));
+    keyBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
+    keyBadge.setColour(juce::Label::backgroundColourId, juce::Colour::fromRGB(142, 149, 165).withAlpha(0.12f));
+    keyBadge.setColour(juce::Label::outlineColourId, juce::Colour::fromRGB(142, 149, 165).withAlpha(0.25f));
     keyBadge.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(keyBadge);
 
-    bpmLabel.setText(juce::String(initialBpm, 1), juce::dontSendNotification);
+    bpmLabel.setText("--", juce::dontSendNotification);
     bpmLabel.setFont(juce::FontOptions(13.5f, juce::Font::bold));
     bpmLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     bpmLabel.setJustificationType(juce::Justification::centredRight);
@@ -445,13 +445,20 @@ void DeckComponent::formatTime(double seconds, char* buffer, size_t bufferSize)
 
 void DeckComponent::updateLabels()
 {
-    double pos = deck.getPosition();
-    double total = deck.getLengthInSeconds();
-    double remaining = std::max(0.0, total - pos);
+    if (deck.isLoaded() || isVideoMode)
+    {
+        double pos = isVideoMode ? 0.0 : deck.getPosition();
+        double total = isVideoMode ? 0.0 : deck.getLengthInSeconds();
+        double remaining = std::max(0.0, total - pos);
 
-    char buf[32];
-    formatTime(remaining, buf, sizeof(buf));
-    timeRemainingLabel.setText("-" + juce::String(buf), juce::dontSendNotification);
+        char buf[32];
+        formatTime(remaining, buf, sizeof(buf));
+        timeRemainingLabel.setText("-" + juce::String(buf), juce::dontSendNotification);
+    }
+    else
+    {
+        timeRemainingLabel.setText("00:00.0", juce::dontSendNotification);
+    }
 
     // Update Play/Cue glowing states
     bool playing = isVideoMode ? isVideoPlaying : deck.isPlaying();
@@ -490,9 +497,17 @@ void DeckComponent::updateLabels()
     }
 
     // Dynamic BPM and pitch reflection (supports DDJ-SB2 MIDI, Tempo Blend and Pitch Bend in real-time)
-    double curBpm = deck.getBpm();
-    bpmLabel.setText(juce::String(curBpm, 1), juce::dontSendNotification);
-    pitchBpmLabel.setText(juce::String(curBpm, 1), juce::dontSendNotification);
+    if (deck.isLoaded())
+    {
+        double curBpm = deck.getBpm();
+        bpmLabel.setText(juce::String(curBpm, 1), juce::dontSendNotification);
+        pitchBpmLabel.setText(juce::String(curBpm, 1), juce::dontSendNotification);
+    }
+    else
+    {
+        bpmLabel.setText("--", juce::dontSendNotification);
+        pitchBpmLabel.setText("--", juce::dontSendNotification);
+    }
 
     float currentRange = deck.getPitchRange();
     if (std::abs(pitchSlider.getMaximum() - (double)currentRange) > 0.01)

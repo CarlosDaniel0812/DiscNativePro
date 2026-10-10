@@ -155,16 +155,6 @@ MainComponent::MainComponent()
 
     addAndMakeVisible(library);
 
-    // Preload demo tracks into Deck 1 and Deck 2 to match DiscPro initial state
-    auto samplesDir = juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("DiscPro_Samples");
-    auto d1File = samplesDir.getChildFile("DiscPro_Latin_Tech_Groove.wav");
-    if (d1File.existsAsFile())
-        deck1.loadAudioFile(d1File);
-
-    auto d2File = samplesDir.getChildFile("Sunset_Beach_House_Mix.wav");
-    if (d2File.existsAsFile())
-        deck2.loadAudioFile(d2File);
-
     setWantsKeyboardFocus(true);
     startTimerHz(30); // 30Hz for smooth crossfader and video mixing
     setSize(1360, 860);
