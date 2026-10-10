@@ -1,6 +1,9 @@
 #include "TopBarComponent.h"
 #if JUCE_MAC
 #include <mach/mach.h>
+#elif JUCE_WINDOWS
+#include <windows.h>
+#include <psapi.h>
 #endif
 #include <cmath>
 
@@ -141,6 +144,12 @@ double TopBarComponent::getProcessMemoryMB()
     if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) == KERN_SUCCESS)
     {
         return static_cast<double>(info.resident_size) / (1024.0 * 1024.0);
+    }
+#elif JUCE_WINDOWS
+    PROCESS_MEMORY_COUNTERS pmc;
+    if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
+    {
+        return static_cast<double>(pmc.WorkingSetSize) / (1024.0 * 1024.0);
     }
 #endif
     return 0.0;

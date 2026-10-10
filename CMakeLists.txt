@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DiscNativePro VERSION 1.0.0 LANGUAGES C CXX OBJCXX)
+project(DiscNativePro VERSION 1.0.0 LANGUAGES C CXX)
+
+if(APPLE)
+    enable_language(OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -64,7 +68,6 @@ target_sources(DiscNativePro
         src/ui/DeckComponent.h
         src/ui/DeckComponent.cpp
         src/ui/YouTubeVideoComponent.h
-        src/ui/YouTubeVideoComponent.mm
         src/ui/MixerComponent.h
         src/ui/MixerComponent.cpp
         src/ui/LibraryComponent.h
@@ -90,12 +93,6 @@ target_sources(DiscNativePro
         src/ui/DjButton.h
 )
 
-target_compile_definitions(DiscNativePro
-    PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-)
-
 target_include_directories(DiscNativePro
     PRIVATE
         src
@@ -112,6 +109,36 @@ target_link_libraries(DiscNativePro
         juce::juce_gui_extra
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
-        "-framework WebKit"
-        "-framework Cocoa"
 )
+
+if(APPLE)
+    target_sources(DiscNativePro
+        PRIVATE
+            src/ui/YouTubeVideoComponent.mm
+    )
+    target_compile_definitions(DiscNativePro
+        PRIVATE
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+    )
+    target_link_libraries(DiscNativePro
+        PRIVATE
+            "-framework WebKit"
+            "-framework Cocoa"
+    )
+elseif(WIN32)
+    target_sources(DiscNativePro
+        PRIVATE
+            src/ui/YouTubeVideoComponent_win.cpp
+    )
+    target_compile_definitions(DiscNativePro
+        PRIVATE
+            JUCE_WEB_BROWSER=1
+            JUCE_USE_WIN_WEBVIEW2=1
+            JUCE_USE_CURL=0
+    )
+    target_link_libraries(DiscNativePro
+        PRIVATE
+            psapi
+    )
+endif()

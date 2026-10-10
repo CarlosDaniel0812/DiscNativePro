@@ -1,0 +1,47 @@
+name: Build Windows Release (x64)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows x64 Native Binary
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build DiscNativePro (Release)
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package Windows Binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          $exePath = Get-ChildItem -Path "build" -Filter "DiscNativePro.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exePath) {
+            Write-Error "DiscNativePro.exe not found in build directory!"
+            exit 1
+          }
+          Write-Host "Found executable at: $exePath"
+          Copy-Item $exePath -Destination "dist\DiscNativePro.exe"
+          Compress-Archive -Path "dist\*" -DestinationPath "DiscNativePro-Windows-x64.zip" -Force
+          Write-Host "Package created: DiscNativePro-Windows-x64.zip"
+
+      - name: Upload Windows Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DiscNativePro-Windows-x64
+          path: DiscNativePro-Windows-x64.zip
+          retention-days: 90

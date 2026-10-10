@@ -3,6 +3,11 @@
 #include <cstring>
 #include <string>
 
+#if JUCE_WINDOWS
+#define popen _popen
+#define pclose _pclose
+#endif
+
 juce::File YouTubeService::getSettingsFile()
 {
     auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)

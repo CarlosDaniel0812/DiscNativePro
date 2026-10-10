@@ -129,10 +129,12 @@ void ThumbnailCache::downloadAsync(const juce::String& videoId,
             auto rawImg = juce::ImageFileFormat::loadFrom(cacheFile);
             if (!rawImg.isValid())
             {
+#if JUCE_MAC
                 // Fallback: convert via macOS sips in case server sent WebP
                 juce::String sipsCmd = "sips -s format jpeg '" + cacheFile.getFullPathName() + "' --out '" + cacheFile.getFullPathName() + "' 2>/dev/null";
                 system(sipsCmd.toRawUTF8());
                 rawImg = juce::ImageFileFormat::loadFrom(cacheFile);
+#endif
             }
 
             if (rawImg.isValid())
