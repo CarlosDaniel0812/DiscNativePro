@@ -127,6 +127,10 @@ if(APPLE)
             "-framework Cocoa"
     )
 elseif(WIN32)
+    list(APPEND CMAKE_MODULE_PATH
+        "${juce_SOURCE_DIR}/extras/Build/CMake"
+        "${JUCE_SOURCE_DIR}/extras/Build/CMake"
+    )
     find_package(WebView2 QUIET)
     target_sources(DiscNativePro
         PRIVATE
@@ -144,5 +148,18 @@ elseif(WIN32)
     )
     if(TARGET juce::juce_webview2)
         target_link_libraries(DiscNativePro PRIVATE juce::juce_webview2)
+    endif()
+
+    # Fallback directo en carpeta packages
+    file(GLOB_RECURSE WEBVIEW2_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/packages/*/WebView2.h")
+    if(WEBVIEW2_HEADERS)
+        list(GET WEBVIEW2_HEADERS 0 FIRST_WV2_HEADER)
+        get_filename_component(WV2_INC_DIR "${FIRST_WV2_HEADER}" DIRECTORY)
+        target_include_directories(DiscNativePro PRIVATE "${WV2_INC_DIR}")
+    endif()
+    file(GLOB_RECURSE WV2_LIBS "${CMAKE_CURRENT_SOURCE_DIR}/packages/*/x64/WebView2LoaderStatic.lib")
+    if(WV2_LIBS)
+        list(GET WV2_LIBS 0 FIRST_WV2_LIB)
+        target_link_libraries(DiscNativePro PRIVATE "${FIRST_WV2_LIB}")
     endif()
 endif()
