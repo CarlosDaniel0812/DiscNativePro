@@ -17,6 +17,7 @@ struct YouTubeVideoComponent::Pimpl
 
     void loadVideo(const juce::String& videoId, float initialVol)
     {
+        juce::ignoreUnused(initialVol);
         if (!browser) return;
 
         // Load YouTube embed directly into Edge WebView2
@@ -29,25 +30,25 @@ struct YouTubeVideoComponent::Pimpl
     {
         if (!browser) return;
         int vol = (int)(juce::jlimit(0.0f, 1.0f, volume0to1) * 100.0f);
-        browser->executeJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"setVolume\",\"args\":[" + juce::String(vol) + "]}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"setVolume\",\"args\":[" + juce::String(vol) + "]}', '*'); } catch(e){}");
     }
 
     void play()
     {
         if (!browser) return;
-        browser->executeJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}', '*'); } catch(e){}");
     }
 
     void pause()
     {
         if (!browser) return;
-        browser->executeJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}', '*'); } catch(e){}");
     }
 
     void seek(double seconds)
     {
         if (!browser) return;
-        browser->executeJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"seekTo\",\"args\":[" + juce::String(seconds) + ", true]}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"seekTo\",\"args\":[" + juce::String(seconds) + ", true]}', '*'); } catch(e){}");
     }
 };
 

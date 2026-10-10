@@ -127,6 +127,7 @@ if(APPLE)
             "-framework Cocoa"
     )
 elseif(WIN32)
+    find_package(WebView2 QUIET)
     target_sources(DiscNativePro
         PRIVATE
             src/ui/YouTubeVideoComponent_win.cpp
@@ -141,4 +142,7 @@ elseif(WIN32)
         PRIVATE
             psapi
     )
+    if(TARGET juce::juce_webview2)
+        target_link_libraries(DiscNativePro PRIVATE juce::juce_webview2)
+    endif()
 endif()
