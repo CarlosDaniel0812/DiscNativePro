@@ -12,7 +12,8 @@ BeatAnalysisResult BeatDetector::analyze(juce::AudioFormatReader* reader)
 
     // Analyze up to 60 seconds
     const double maxDuration = 60.0;
-    int64_t maxSamples = std::min((int64_t)(maxDuration * reader->sampleRate), reader->lengthInSamples);
+    int64_t maxSamples = std::min<int64_t>(static_cast<int64_t>(maxDuration * reader->sampleRate),
+                                           static_cast<int64_t>(reader->lengthInSamples));
 
     int downsampleFactor = std::max(1, (int)(reader->sampleRate / 4000.0));
     double effectiveRate = reader->sampleRate / (double)downsampleFactor;
@@ -29,7 +30,7 @@ BeatAnalysisResult BeatDetector::analyze(juce::AudioFormatReader* reader)
 
     while (samplesReadTotal < maxSamples)
     {
-        int toRead = (int)std::min((int64_t)readChunkSize, maxSamples - samplesReadTotal);
+        int toRead = static_cast<int>(std::min<int64_t>(readChunkSize, maxSamples - samplesReadTotal));
         readBuffer.clear();
         reader->read(&readBuffer, 0, toRead, samplesReadTotal, true, false);
 
