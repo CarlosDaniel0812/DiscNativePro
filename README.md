@@ -1,6 +1,6 @@
 # DiscNativePro
 
-**DiscNativePro** es una aplicación de DJ nativa de alto rendimiento para **macOS** y **Windows**, construida en **C++20** y **JUCE 8**. Diseñada con una arquitectura de audio de latencia ultrabaja, interfaz oscura profesional inspirada en el estándar de la industria (estilo Pioneer Rekordbox / djay Pro) e integración nativa de streaming y mezcla de video de YouTube.
+**DiscNativePro** es una aplicación de DJ nativa de alto rendimiento para **macOS**, **Windows** y **Linux**, construida en **C++20** y **JUCE 8**. Diseñada con una arquitectura de audio de latencia ultrabaja, interfaz oscura profesional inspirada en el estándar de la industria (estilo Pioneer Rekordbox / djay Pro) e integración nativa de streaming y mezcla de video de YouTube.
 
 ---
 
@@ -49,6 +49,12 @@
 - **Compilador**: Visual Studio 2022 (MSVC v143+ con carga de trabajo *"Desarrollo para el escritorio con C++"*).
 - **CMake**: Versión 3.22 o superior.
 - **WebView2**: Microsoft Edge WebView2 Runtime (incluido por defecto en Windows 10 y 11).
+
+### Linux
+- **Sistema Operativo**: Ubuntu 22.04 / 24.04, Debian 12, Fedora o similar (x64).
+- **Compilador**: GCC 11+ o Clang 14+ con soporte C++20.
+- **CMake**: Versión 3.22 o superior.
+- **Librerías de Audio & Gráficos**: ALSA (`libasound2-dev`), X11, WebKitGTK (`libwebkit2gtk-4.1-dev`), OpenGL.
 
 ---
 
@@ -122,6 +128,51 @@ cmake --build build --config Release --parallel
 El binario ejecutable optimizado estará disponible en:
 ```powershell
 .\build\DiscNativePro_artefacts\Release\DiscNativePro.exe
+```
+
+---
+
+## Compilación y Ejecución en Linux
+
+Tienes dos alternativas para obtener el binario ejecutable en Linux:
+
+### Opción A: Descarga Automática desde GitHub Actions (Recomendada)
+1. Dirígete a la pestaña **[Actions](https://github.com/axel-molina/DiscNativePro/actions)** de este repositorio.
+2. Selecciona la ejecución más reciente del flujo **Build Linux Release (x64)** (o ejecútalo bajo demanda).
+3. En la sección **Artifacts**, descarga el archivo comprimido **`DiscNativePro-Linux-x64.tar.gz`**.
+4. Descomprímelo y ejecuta:
+   ```bash
+   tar -xzvf DiscNativePro-Linux-x64.tar.gz
+   ./DiscNativePro
+   ```
+
+---
+
+### Opción B: Compilación Manual en Linux (Ubuntu / Debian / Pop!_OS)
+
+#### 1. Instalar dependencias del sistema
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  build-essential cmake ninja-build \
+  libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+  libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+  libxinerama-dev libxrandr-dev libxrender-dev \
+  libglu1-mesa-dev mesa-common-dev \
+  libwebkit2gtk-4.1-dev libgtk-3-dev libcurl4-openssl-dev
+```
+
+#### 2. Clonar y configurar con CMake
+```bash
+git clone https://github.com/axel-molina/DiscNativePro.git
+cd DiscNativePro
+cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+```
+
+#### 3. Compilar y ejecutar
+```bash
+cmake --build build --config Release --parallel
+./build/DiscNativePro_artefacts/Release/DiscNativePro
 ```
 
 ---

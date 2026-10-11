@@ -4,6 +4,9 @@
 #elif JUCE_WINDOWS
 #include <windows.h>
 #include <psapi.h>
+#elif JUCE_LINUX
+#include <unistd.h>
+#include <cstdio>
 #endif
 #include <cmath>
 
@@ -150,6 +153,20 @@ double TopBarComponent::getProcessMemoryMB()
     if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc)))
     {
         return static_cast<double>(pmc.WorkingSetSize) / (1024.0 * 1024.0);
+    }
+#elif JUCE_LINUX
+    FILE* file = std::fopen("/proc/self/statm", "r");
+    if (file != nullptr)
+    {
+        long pages = 0;
+        long resident = 0;
+        if (std::fscanf(file, "%ld %ld", &pages, &resident) == 2)
+        {
+            std::fclose(file);
+            long pageSize = sysconf(_SC_PAGESIZE);
+            return static_cast<double>(resident * pageSize) / (1024.0 * 1024.0);
+        }
+        std::fclose(file);
     }
 #endif
     return 0.0;

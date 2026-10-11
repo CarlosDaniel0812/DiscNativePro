@@ -162,4 +162,14 @@ elseif(WIN32)
         list(GET WV2_LIBS 0 FIRST_WV2_LIB)
         target_link_libraries(DiscNativePro PRIVATE "${FIRST_WV2_LIB}")
     endif()
+elseif(UNIX AND NOT APPLE)
+    target_sources(DiscNativePro
+        PRIVATE
+            src/ui/YouTubeVideoComponent_linux.cpp
+    )
+    target_compile_definitions(DiscNativePro
+        PRIVATE
+            JUCE_WEB_BROWSER=1
+            JUCE_USE_CURL=0
+    )
 endif()
