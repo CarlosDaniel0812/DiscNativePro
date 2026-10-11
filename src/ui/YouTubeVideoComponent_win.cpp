@@ -10,7 +10,20 @@ struct YouTubeVideoComponent::Pimpl
 
     Pimpl()
     {
-        browser = std::make_unique<juce::WebBrowserComponent>();
+        auto dataDir = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                           .getChildFile("DiscNativePro")
+                           .getChildFile("WebView2Profile");
+        dataDir.createDirectory();
+
+        auto options = juce::WebBrowserComponent::Options{}
+                           .withBackend(juce::WebBrowserComponent::Options::Backend::webview2)
+                           .withWinWebView2Options(
+                               juce::WebBrowserComponent::Options::WinWebView2{}
+                                   .withUserDataFolder(dataDir)
+                                   .withStatusBarDisabled()
+                           );
+
+        browser = std::make_unique<juce::WebBrowserComponent>(options);
     }
 
     ~Pimpl() = default;

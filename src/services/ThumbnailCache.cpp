@@ -89,7 +89,8 @@ void ThumbnailCache::downloadAsync(const juce::String& videoId,
     juce::Thread::launch([this, videoId, url, safeKey, cacheFile, tmpFile, cb = std::move(onReadyCallback)]() mutable {
         bool downloadOk = false;
 
-        // Try downloading via curl
+#if !JUCE_WINDOWS
+        // Try downloading via curl on macOS / POSIX
         juce::String escapedUrl = url;
         escapedUrl = escapedUrl.replace("'", "'\\''");
         juce::String cmd = "curl -s -L --max-time 6 -o '" + tmpFile.getFullPathName() + "' '" + escapedUrl + "'";
@@ -101,6 +102,7 @@ void ThumbnailCache::downloadAsync(const juce::String& videoId,
             tmpFile.moveFileTo(cacheFile);
             downloadOk = true;
         }
+#endif
 
         // Fallback to JUCE URL if curl failed
         if (!downloadOk)

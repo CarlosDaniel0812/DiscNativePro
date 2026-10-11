@@ -183,7 +183,8 @@ std::vector<YouTubeSearchResult> YouTubeService::searchPublic(const juce::String
 
     juce::String html;
 
-    // Use curl on macOS for ultra-fast, robust response with HTTP/2 and modern TLS
+#if !JUCE_WINDOWS
+    // Use curl on macOS / POSIX for ultra-fast, robust response with HTTP/2 and modern TLS
     juce::String escapedQuery = query;
     escapedQuery = escapedQuery.replace("'", "'\\''");
     juce::String cmd = "curl -s -L --max-time 6 "
@@ -203,13 +204,20 @@ std::vector<YouTubeSearchResult> YouTubeService::searchPublic(const juce::String
         pclose(pipe);
         html = juce::String::fromUTF8(outStr.data(), (int)outStr.size());
     }
+#endif
 
+    // On Windows (or fallback on macOS), use native juce::URL in-memory streaming
+    // to avoid spawning visible cmd.exe console windows
     if (html.isEmpty())
     {
         juce::String urlStr = "https://www.youtube.com/results?search_query=" + juce::URL::addEscapeChars(query, true);
         juce::URL url(urlStr);
         juce::String extraHeaders =
+#if JUCE_WINDOWS
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36\r\n"
+#else
             "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+#endif
             "Accept-Language: es,en-US;q=0.9,en;q=0.8\r\n";
 
         std::unique_ptr<juce::InputStream> stream(url.createInputStream(
