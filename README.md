@@ -154,7 +154,7 @@ Tienes dos alternativas para obtener el binario ejecutable en Linux:
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  build-essential cmake ninja-build \
+  build-essential cmake ninja-build pkg-config \
   libasound2-dev libjack-jackd2-dev libfreetype6-dev \
   libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
   libxinerama-dev libxrandr-dev libxrender-dev \

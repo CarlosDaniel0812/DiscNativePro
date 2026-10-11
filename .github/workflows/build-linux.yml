@@ -21,6 +21,7 @@ jobs:
             build-essential \
             cmake \
             ninja-build \
+            pkg-config \
             libasound2-dev \
             libjack-jackd2-dev \
             libfreetype6-dev \

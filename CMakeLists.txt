@@ -163,6 +163,10 @@ elseif(WIN32)
         target_link_libraries(DiscNativePro PRIVATE "${FIRST_WV2_LIB}")
     endif()
 elseif(UNIX AND NOT APPLE)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)
+    pkg_search_module(WEBKIT REQUIRED IMPORTED_TARGET webkit2gtk-4.1 webkit2gtk-4.0)
+
     target_sources(DiscNativePro
         PRIVATE
             src/ui/YouTubeVideoComponent_linux.cpp
@@ -171,5 +175,10 @@ elseif(UNIX AND NOT APPLE)
         PRIVATE
             JUCE_WEB_BROWSER=1
             JUCE_USE_CURL=0
+    )
+    target_link_libraries(DiscNativePro
+        PRIVATE
+            PkgConfig::GTK3
+            PkgConfig::WEBKIT
     )
 endif()
