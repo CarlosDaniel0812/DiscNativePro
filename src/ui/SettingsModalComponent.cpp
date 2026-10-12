@@ -4,20 +4,9 @@
 SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr)
     : audioEngine(engine), midi(midiMgr)
 {
-    setSize(640, 540);
+    setSize(720, 540);
 
-    // 1. Close traffic light button
-    closeDotButton.setButtonText("");
-    closeDotButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(255, 95, 86));
-    closeDotButton.onClick = [this]() { if (onClose) onClose(); };
-    addAndMakeVisible(closeDotButton);
-
-    headerTitleLabel.setText("Preferencias de DiscNativePro", juce::dontSendNotification);
-    headerTitleLabel.setFont(juce::FontOptions(12.5f, juce::Font::bold));
-    headerTitleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
-    addAndMakeVisible(headerTitleLabel);
-
-    // 2. Tab Buttons (6 tabs)
+    // 1. Tab Buttons (8 tabs)
     auto setupTabBtn = [this](DjButton& btn, LucideIcons::IconType icon, const juce::String& text, int tabIdx) {
         btn.setIcon(icon, 14.0f);
         btn.setText(text);
@@ -26,6 +15,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
         btn.onClick = [this, tabIdx]() {
             activeTab = tabIdx;
             updateTabVisibility();
+            bodyViewport.setViewPosition({ 0, 0 });
             resized();
             repaint();
         };
@@ -39,24 +29,22 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupTabBtn(tabShortcutsBtn, LucideIcons::IconType::Keyboard, "Shortcuts", 4);
     setupTabBtn(tabStreamingBtn, LucideIcons::IconType::Tv, "Streaming", 5);
     setupTabBtn(tabAIBtn, LucideIcons::IconType::Sparkles, "IA Match", 6);
+    setupTabBtn(tabDonateBtn, LucideIcons::IconType::Coffee, "Donar", 7);
 
     // 3. Setup Tab Contents
+    bodyViewport.setViewedComponent(&bodyContent, false);
+    bodyViewport.setScrollBarsShown(true, false);
+    addAndMakeVisible(bodyViewport);
+
     setupGeneralTab();
     setupDevicesTab();
     setupSoundTab();
     setupMidiTab();
     setupStreamingTab();
     setupAITab();
+    setupDonateTab();
 
     // 4. Footer controls
-    helpButton.setText("?");
-    helpButton.setFontSize(11.0f);
-    helpButton.setCornerRadius(4.0f);
-    helpButton.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
-                                juce::Colour::fromRGB(150, 155, 170),
-                                juce::Colour::fromRGB(150, 155, 170));
-    addAndMakeVisible(helpButton);
-
     undoButton.setButtonText("Deshacer");
     undoButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(37, 41, 56));
     undoButton.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(220, 225, 235));
@@ -69,41 +57,84 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     applyButton.onClick = [this]() { applySettings(); };
     addAndMakeVisible(applyButton);
 
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
     updateTabVisibility();
 }
 
 SettingsModalComponent::~SettingsModalComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
     midi.onMidiActivity = nullptr;
 }
 
+void SettingsModalComponent::languageChanged()
+{
+    refreshLanguage();
+}
+
+
 void SettingsModalComponent::setupGeneralTab()
 {
+    // Section 0: Idioma / Language
+    languageSectionLabel.setText(LanguageManager::trUtf8("Idioma de la Interfaz", "Interface Language"), juce::dontSendNotification);
+    languageSectionLabel.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    languageSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
+    bodyContent.addChildComponent(languageSectionLabel);
+
+    languageSelectLabel.setText(LanguageManager::trUtf8("Idioma:", "Language:"), juce::dontSendNotification);
+    languageSelectLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    languageSelectLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
+    bodyContent.addChildComponent(languageSelectLabel);
+
+    languageCombo.addItem(LanguageManager::trUtf8("Automático (Sistema)", "Automatic (System)"), 1);
+    languageCombo.addItem(juce::String::fromUTF8("Español (Spanish)"), 2);
+    languageCombo.addItem(juce::String::fromUTF8("English (Inglés)"), 3);
+
+    auto setting = LanguageManager::getInstance().getLanguageSetting();
+    if (setting == LanguageSetting::System)
+        languageCombo.setSelectedId(1, juce::dontSendNotification);
+    else if (setting == LanguageSetting::Spanish)
+        languageCombo.setSelectedId(2, juce::dontSendNotification);
+    else
+        languageCombo.setSelectedId(3, juce::dontSendNotification);
+
+    languageCombo.onChange = [this]() {
+        int id = languageCombo.getSelectedId();
+        if (id == 1)
+            LanguageManager::getInstance().setLanguageSetting(LanguageSetting::System);
+        else if (id == 2)
+            LanguageManager::getInstance().setLanguageSetting(LanguageSetting::Spanish);
+        else if (id == 3)
+            LanguageManager::getInstance().setLanguageSetting(LanguageSetting::English);
+    };
+    bodyContent.addChildComponent(languageCombo);
+
     // Section 1: Comportamiento de Decks
     generalSectionDeck.setText(juce::String::fromUTF8("Comportamiento de Decks"), juce::dontSendNotification);
     generalSectionDeck.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     generalSectionDeck.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(generalSectionDeck);
+    bodyContent.addChildComponent(generalSectionDeck);
 
     loadLockToggle.setButtonText(juce::String::fromUTF8("Protección de carga (Load Lock): Bloquear carga si el deck reproduce en vivo"));
     loadLockToggle.setToggleState(false, juce::dontSendNotification);
     loadLockToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white.withAlpha(0.85f));
-    addChildComponent(loadLockToggle);
+    bodyContent.addChildComponent(loadLockToggle);
 
     jogModeLabel.setText(juce::String::fromUTF8("Modo Jog Wheel:"), juce::dontSendNotification);
     jogModeLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     jogModeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(jogModeLabel);
+    bodyContent.addChildComponent(jogModeLabel);
 
     jogModeCombo.addItem(juce::String::fromUTF8("Vinilo (Scratch & Pitch Bend al borde)"), 1);
     jogModeCombo.addItem(juce::String::fromUTF8("CDJ (Pitch Bend continuo)"), 2);
     jogModeCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(jogModeCombo);
+    bodyContent.addChildComponent(jogModeCombo);
 
     pitchRangeLabel.setText(juce::String::fromUTF8("Rango de Pitch por defecto:"), juce::dontSendNotification);
     pitchRangeLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     pitchRangeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(pitchRangeLabel);
+    bodyContent.addChildComponent(pitchRangeLabel);
 
     pitchRangeCombo.addItem(juce::String::fromUTF8("±8% (Precisión estándar Club)"), 1);
     pitchRangeCombo.addItem(juce::String::fromUTF8("±16% (Rango extendido)"), 2);
@@ -121,57 +152,61 @@ void SettingsModalComponent::setupGeneralTab()
         else if (id == 3) r = 50.0f;
         audioEngine.setPitchRange(r);
     };
-    addChildComponent(pitchRangeCombo);
+    bodyContent.addChildComponent(pitchRangeCombo);
 
     autoCueToggle.setButtonText(juce::String::fromUTF8("Auto-CUE: Posicionar cabezal en el primer beat al cargar pista"));
     autoCueToggle.setToggleState(true, juce::dontSendNotification);
     autoCueToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white.withAlpha(0.85f));
-    addChildComponent(autoCueToggle);
+    bodyContent.addChildComponent(autoCueToggle);
+
+    ytAutoplayToggle.setToggleState(YouTubeService::isVideoAutoplayEnabled(), juce::dontSendNotification);
+    ytAutoplayToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white.withAlpha(0.85f));
+    bodyContent.addChildComponent(ytAutoplayToggle);
 
     // Section 2: Visualización y Rendimiento
     generalSectionDisplay.setText(juce::String::fromUTF8("Visualización y Rendimiento"), juce::dontSendNotification);
     generalSectionDisplay.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     generalSectionDisplay.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(generalSectionDisplay);
+    bodyContent.addChildComponent(generalSectionDisplay);
 
     waveformFpsLabel.setText(juce::String::fromUTF8("Tasa de refresco de formas de onda:"), juce::dontSendNotification);
     waveformFpsLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     waveformFpsLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(waveformFpsLabel);
+    bodyContent.addChildComponent(waveformFpsLabel);
 
     waveformFpsCombo.addItem(juce::String::fromUTF8("60 FPS (Fluidez ultra suave - Recomendado)"), 1);
     waveformFpsCombo.addItem(juce::String::fromUTF8("30 FPS (Ahorro de batería y recursos)"), 2);
     waveformFpsCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(waveformFpsCombo);
+    bodyContent.addChildComponent(waveformFpsCombo);
 
     waveformColorLabel.setText(juce::String::fromUTF8("Esquema de color de Waveform:"), juce::dontSendNotification);
     waveformColorLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     waveformColorLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(waveformColorLabel);
+    bodyContent.addChildComponent(waveformColorLabel);
 
     waveformColorCombo.addItem(juce::String::fromUTF8("RGB Multicolor (Frecuencias Agudos/Medios/Graves)"), 1);
-    waveformColorCombo.addItem(juce::String::fromUTF8("Azul Neón Clásico DiscPro"), 2);
+    waveformColorCombo.addItem(juce::String::fromUTF8("Azul Neón Clásico DiscNativePro"), 2);
     waveformColorCombo.addItem(juce::String::fromUTF8("Monocromo Plata"), 3);
     waveformColorCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(waveformColorCombo);
+    bodyContent.addChildComponent(waveformColorCombo);
 
     // Section 3: Grabación de Sesiones
     recSectionLabel.setText(juce::String::fromUTF8("Grabación de Sesiones"), juce::dontSendNotification);
     recSectionLabel.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     recSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(recSectionLabel);
+    bodyContent.addChildComponent(recSectionLabel);
 
     recFolderDescLabel.setText(juce::String::fromUTF8("Carpeta de destino para archivos grabados (.wav 24-bit):"), juce::dontSendNotification);
     recFolderDescLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     recFolderDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(recFolderDescLabel);
+    bodyContent.addChildComponent(recFolderDescLabel);
 
     recFolderEditor.setReadOnly(true);
     recFolderEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
     recFolderEditor.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(220, 225, 235));
     recFolderEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(38, 43, 58));
     recFolderEditor.setFont(juce::FontOptions("Menlo", 10.5f, juce::Font::plain));
-    addChildComponent(recFolderEditor);
+    bodyContent.addChildComponent(recFolderEditor);
 
     recBrowseBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
     recBrowseBtn.setText(juce::String::fromUTF8("Examinar..."));
@@ -196,7 +231,7 @@ void SettingsModalComponent::setupGeneralTab()
             }
         });
     };
-    addChildComponent(recBrowseBtn);
+    bodyContent.addChildComponent(recBrowseBtn);
 
     recOpenBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
     recOpenBtn.setText(juce::String::fromUTF8("Abrir Carpeta"));
@@ -212,7 +247,7 @@ void SettingsModalComponent::setupGeneralTab()
             dir.createDirectory();
         dir.revealToUser();
     };
-    addChildComponent(recOpenBtn);
+    bodyContent.addChildComponent(recOpenBtn);
 
     recResetBtn.setText(juce::String::fromUTF8("Por defecto"));
     recResetBtn.setFontSize(10.5f);
@@ -225,15 +260,9 @@ void SettingsModalComponent::setupGeneralTab()
         audioEngine.setRecordingDirectory(audioEngine.getDefaultRecordingDirectory());
         updateRecordingFolderUI();
     };
-    addChildComponent(recResetBtn);
+    bodyContent.addChildComponent(recResetBtn);
 
     updateRecordingFolderUI();
-
-    appInfoLabel.setText(juce::String::fromUTF8("DiscNativePro DJ Workstation v1.0.0 • Motor C++20 nativo con JUCE 8, CoreAudio y SIMD DSP."),
-                         juce::dontSendNotification);
-    appInfoLabel.setFont(juce::FontOptions(10.0f, juce::Font::italic));
-    appInfoLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(110, 115, 130));
-    addChildComponent(appInfoLabel);
 }
 
 void SettingsModalComponent::updateRecordingFolderUI()
@@ -243,24 +272,191 @@ void SettingsModalComponent::updateRecordingFolderUI()
     recFolderEditor.setCaretPosition(recFolderEditor.getText().length());
 }
 
+void SettingsModalComponent::refreshLanguage()
+{
+    tabGeneralBtn.setText(LanguageManager::trUtf8("General", "General"));
+    tabDevicesBtn.setText(LanguageManager::trUtf8("Dispositivos", "Devices"));
+    tabSoundBtn.setText(LanguageManager::trUtf8("Sonido", "Sound"));
+    tabMidiBtn.setText(LanguageManager::trUtf8("MIDI", "MIDI"));
+    tabShortcutsBtn.setText(LanguageManager::trUtf8("Shortcuts", "Shortcuts"));
+    tabStreamingBtn.setText(LanguageManager::trUtf8("Streaming", "Streaming"));
+    tabAIBtn.setText(LanguageManager::trUtf8("IA Match", "AI Match"));
+    tabDonateBtn.setText(LanguageManager::trUtf8("Donar", "Donate"));
+
+    undoButton.setButtonText(LanguageManager::trUtf8("Deshacer", "Undo"));
+    applyButton.setButtonText(LanguageManager::trUtf8("Aplicar", "Apply"));
+
+    // Tab 0: General
+    languageSectionLabel.setText(LanguageManager::trUtf8("Idioma de la Interfaz", "Interface Language"), juce::dontSendNotification);
+    languageSelectLabel.setText(LanguageManager::trUtf8("Idioma:", "Language:"), juce::dontSendNotification);
+    int curLangId = languageCombo.getSelectedId();
+    languageCombo.clear(juce::dontSendNotification);
+    languageCombo.addItem(LanguageManager::trUtf8("Automático (Sistema)", "Automatic (System)"), 1);
+    languageCombo.addItem(juce::String::fromUTF8("Español (Spanish)"), 2);
+    languageCombo.addItem(juce::String::fromUTF8("English (Inglés)"), 3);
+    languageCombo.setSelectedId(curLangId > 0 ? curLangId : 1, juce::dontSendNotification);
+
+    generalSectionDeck.setText(LanguageManager::trUtf8("Comportamiento de Decks", "Deck Behavior"), juce::dontSendNotification);
+    loadLockToggle.setButtonText(LanguageManager::trUtf8("Protección de carga (Load Lock): Bloquear carga si el deck reproduce en vivo", "Load Lock: Prevent loading tracks into playing decks"));
+    jogModeLabel.setText(LanguageManager::trUtf8("Modo Jog Wheel:", "Jog Wheel Mode:"), juce::dontSendNotification);
+    int curJog = jogModeCombo.getSelectedId();
+    jogModeCombo.clear(juce::dontSendNotification);
+    jogModeCombo.addItem(LanguageManager::trUtf8("Vinilo (Scratch & Pitch Bend al borde)", "Vinyl (Scratch & Edge Pitch Bend)"), 1);
+    jogModeCombo.addItem(LanguageManager::trUtf8("CDJ (Pitch Bend continuo)", "CDJ (Continuous Pitch Bend)"), 2);
+    jogModeCombo.setSelectedId(curJog > 0 ? curJog : 1, juce::dontSendNotification);
+
+    pitchRangeLabel.setText(LanguageManager::trUtf8("Rango de Pitch por defecto:", "Default Pitch Range:"), juce::dontSendNotification);
+    int curPitch = pitchRangeCombo.getSelectedId();
+    pitchRangeCombo.clear(juce::dontSendNotification);
+    pitchRangeCombo.addItem(LanguageManager::trUtf8("±8% (Precisión estándar Club)", "±8% (Standard Club Precision)"), 1);
+    pitchRangeCombo.addItem(LanguageManager::trUtf8("±16% (Rango extendido)", "±16% (Extended Range)"), 2);
+    pitchRangeCombo.addItem(LanguageManager::trUtf8("±50% (Extremo / Transiciones abiertas)", "±50% (Extreme / Open Transitions)"), 3);
+    pitchRangeCombo.setSelectedId(curPitch > 0 ? curPitch : 1, juce::dontSendNotification);
+
+    autoCueToggle.setButtonText(LanguageManager::trUtf8("Auto-CUE: Posicionar cabezal en el primer beat al cargar pista", "Auto-CUE: Position playhead at first beat on track load"));
+    ytAutoplayToggle.setButtonText(LanguageManager::trUtf8("Autoplay YouTube: Reproducir automáticamente el video al cargarlo en bandeja",
+                                                            "YouTube autoplay: Start playing the video automatically when loaded on a deck"));
+
+    generalSectionDisplay.setText(LanguageManager::trUtf8("Visualización y Rendimiento", "Display & Performance"), juce::dontSendNotification);
+    waveformFpsLabel.setText(LanguageManager::trUtf8("Tasa de refresco de formas de onda:", "Waveform Refresh Rate:"), juce::dontSendNotification);
+    int curFps = waveformFpsCombo.getSelectedId();
+    waveformFpsCombo.clear(juce::dontSendNotification);
+    waveformFpsCombo.addItem(LanguageManager::trUtf8("60 FPS (Fluidez ultra suave - Recomendado)", "60 FPS (Ultra Smooth - Recommended)"), 1);
+    waveformFpsCombo.addItem(LanguageManager::trUtf8("30 FPS (Ahorro de batería y recursos)", "30 FPS (Battery & Resource Saver)"), 2);
+    waveformFpsCombo.setSelectedId(curFps > 0 ? curFps : 1, juce::dontSendNotification);
+
+    waveformColorLabel.setText(LanguageManager::trUtf8("Esquema de color de Waveform:", "Waveform Color Scheme:"), juce::dontSendNotification);
+    int curColor = waveformColorCombo.getSelectedId();
+    waveformColorCombo.clear(juce::dontSendNotification);
+    waveformColorCombo.addItem(LanguageManager::trUtf8("RGB Multicolor (Frecuencias Agudos/Medios/Graves)", "RGB Multicolor (High/Mid/Low Frequencies)"), 1);
+    waveformColorCombo.addItem(LanguageManager::trUtf8("Azul Neón Clásico DiscNativePro", "Classic Neon Blue DiscNativePro"), 2);
+    waveformColorCombo.addItem(LanguageManager::trUtf8("Monocromo Plata", "Silver Monochrome"), 3);
+    waveformColorCombo.setSelectedId(curColor > 0 ? curColor : 1, juce::dontSendNotification);
+
+    recSectionLabel.setText(LanguageManager::trUtf8("Grabación de Sesiones", "Session Recording"), juce::dontSendNotification);
+    recFolderDescLabel.setText(LanguageManager::trUtf8("Carpeta de destino para archivos grabados (.wav 24-bit):", "Destination folder for recorded files (.wav 24-bit):"), juce::dontSendNotification);
+    recBrowseBtn.setText(LanguageManager::trUtf8("Examinar...", "Browse..."));
+    recOpenBtn.setText(LanguageManager::trUtf8("Abrir Carpeta", "Open Folder"));
+    recResetBtn.setText(LanguageManager::trUtf8("Por defecto", "Default"));
+
+    appInfoLabel.setText(LanguageManager::trUtf8("DiscNativePro DJ Workstation v1.0.0 • Motor C++20 nativo con JUCE 8, CoreAudio y SIMD DSP.", "DiscNativePro DJ Workstation v1.0.0 • Native C++20 engine with JUCE 8, CoreAudio & SIMD DSP."), juce::dontSendNotification);
+
+    // Tab 1: Dispositivos / Devices
+    routingSectionLabel.setText(LanguageManager::trUtf8("Enrutamiento de Salidas de Audio (Pioneer DDJ / Multi-Canal)", "Audio Output Routing (Pioneer DDJ / Multi-Channel)"), juce::dontSendNotification);
+    masterRoutingLabel.setText(LanguageManager::trUtf8("Salida Master (Altavoces / Club):", "Master Output (Speakers / Club):"), juce::dontSendNotification);
+    int curMR = masterRoutingCombo.getSelectedId();
+    masterRoutingCombo.clear(juce::dontSendNotification);
+    masterRoutingCombo.addItem(LanguageManager::trUtf8("Canales 1 & 2 (Salida RCA Master DDJ-SB2)", "Channels 1 & 2 (DDJ-SB2 Master RCA)"), 1);
+    masterRoutingCombo.addItem(LanguageManager::trUtf8("Canales 3 & 4 (Salida Frontal DDJ-SB2)", "Channels 3 & 4 (DDJ-SB2 Front Output)"), 2);
+    masterRoutingCombo.setSelectedId(curMR > 0 ? curMR : 1, juce::dontSendNotification);
+
+    cueRoutingLabel.setText(LanguageManager::trUtf8("Salida Auriculares (Preescucha CUE):", "Headphones Output (CUE Cueing):"), juce::dontSendNotification);
+    int curCR = cueRoutingCombo.getSelectedId();
+    cueRoutingCombo.clear(juce::dontSendNotification);
+    cueRoutingCombo.addItem(LanguageManager::trUtf8("Canales 3 & 4 (Jack Frontal Auriculares DDJ-SB2)", "Channels 3 & 4 (DDJ-SB2 Front Headphone Jack)"), 1);
+    cueRoutingCombo.addItem(LanguageManager::trUtf8("Canales 1 & 2 (Salida Compartida Master)", "Channels 1 & 2 (Shared Master Output)"), 2);
+    cueRoutingCombo.setSelectedId(curCR > 0 ? curCR : 1, juce::dontSendNotification);
+
+    // Tab 2: Sonido / Sound
+    soundSectionEngine.setText(LanguageManager::trUtf8("Motor de Audio CoreAudio", "CoreAudio Sound Engine"), juce::dontSendNotification);
+    int sr = (int)audioEngine.getSampleRate();
+    if (sr <= 0) sr = 44100;
+    sampleRateInfoLabel.setText(LanguageManager::trUtf8("Frecuencia de Muestreo (Sample Rate): ", "Sample Rate: ") + juce::String(sr) + " Hz (CoreAudio)", juce::dontSendNotification);
+    bufferSizeLabel.setText(LanguageManager::trUtf8("Tamaño de Buffer de Audio / Latencia:", "Audio Buffer Size / Latency:"), juce::dontSendNotification);
+    int curBuf = bufferSizeCombo.getSelectedId();
+    bufferSizeCombo.clear(juce::dontSendNotification);
+    bufferSizeCombo.addItem(LanguageManager::trUtf8("128 muestras (2.9 ms • Ultra baja latencia interactiva)", "128 samples (2.9 ms • Ultra-low interactive latency)"), 1);
+    bufferSizeCombo.addItem(LanguageManager::trUtf8("256 muestras (5.8 ms • Baja latencia recomendada)", "256 samples (5.8 ms • Recommended low latency)"), 2);
+    bufferSizeCombo.addItem(LanguageManager::trUtf8("512 muestras (11.6 ms • Equilibrado estándar)", "512 samples (11.6 ms • Standard balanced)"), 3);
+    bufferSizeCombo.addItem(LanguageManager::trUtf8("1024 muestras (23.2 ms • Máxima estabilidad)", "1024 samples (23.2 ms • Maximum stability)"), 4);
+    bufferSizeCombo.setSelectedId(curBuf > 0 ? curBuf : 2, juce::dontSendNotification);
+
+    soundSectionMixer.setText(LanguageManager::trUtf8("Ecualizador & Crossfader", "Equalizer & Crossfader"), juce::dontSendNotification);
+    eqModeLabel.setText(LanguageManager::trUtf8("Curva de Ecualizador (EQ Mode):", "Equalizer Curve (EQ Mode):"), juce::dontSendNotification);
+    int curEq = eqModeCombo.getSelectedId();
+    eqModeCombo.clear(juce::dontSendNotification);
+    eqModeCombo.addItem(LanguageManager::trUtf8("Isolator (-∞ dB Full Kill • Corte total por banda)", "Isolator (-∞ dB Full Kill • Total band cut)"), 1);
+    eqModeCombo.addItem(LanguageManager::trUtf8("Clásico (-24 dB a +6 dB • Curva analógica suave)", "Classic (-24 dB to +6 dB • Smooth analog curve)"), 2);
+    eqModeCombo.setSelectedId(curEq > 0 ? curEq : 1, juce::dontSendNotification);
+
+    crossfaderCurveLabel.setText(LanguageManager::trUtf8("Curva de Crossfader por defecto:", "Default Crossfader Curve:"), juce::dontSendNotification);
+    int curXf = crossfaderCurveCombo.getSelectedId();
+    crossfaderCurveCombo.clear(juce::dontSendNotification);
+    crossfaderCurveCombo.addItem(LanguageManager::trUtf8("Suave (Smooth • Transiciones fluidas)", "Smooth (Fluid transitions)"), 1);
+    crossfaderCurveCombo.addItem(LanguageManager::trUtf8("Lineal (Linear • Mezcla progresiva)", "Linear (Progressive mix)"), 2);
+    crossfaderCurveCombo.addItem(LanguageManager::trUtf8("Corte Rápido (Scratch • Corte instantáneo)", "Fast Cut (Scratch • Instant cut)"), 3);
+    crossfaderCurveCombo.setSelectedId(curXf > 0 ? curXf : 1, juce::dontSendNotification);
+
+    soundSectionMaster.setText(LanguageManager::trUtf8("Margen Dinámico y Limitador Master", "Dynamic Headroom & Master Limiter"), juce::dontSendNotification);
+    headroomLabel.setText(LanguageManager::trUtf8("Margen Dinámico Master (Headroom):", "Master Headroom:"), juce::dontSendNotification);
+    int curHr = headroomCombo.getSelectedId();
+    headroomCombo.clear(juce::dontSendNotification);
+    headroomCombo.addItem(LanguageManager::trUtf8("-3 dB (Recomendado para clubs y grabación)", "-3 dB (Recommended for clubs and recording)"), 1);
+    headroomCombo.addItem(LanguageManager::trUtf8("-6 dB (Margen amplio para mezclas intensas)", "-6 dB (Wide headroom for intense mixing)"), 2);
+    headroomCombo.addItem(LanguageManager::trUtf8("0 dB (Sin margen / límite exacto)", "0 dB (No headroom / exact limit)"), 3);
+    headroomCombo.setSelectedId(curHr > 0 ? curHr : 1, juce::dontSendNotification);
+
+    masterLimiterToggle.setButtonText(LanguageManager::trUtf8("Limitador Master de Seguridad (Evita distorsión digital y clipping)", "Safety Master Limiter (Prevents digital distortion and clipping)"));
+
+    soundSectionPhones.setText(LanguageManager::trUtf8("Monitoreo y Auriculares (Preescucha CUE)", "Monitoring & Headphones (CUE Cueing)"), juce::dontSendNotification);
+    cueMixLabel.setText(LanguageManager::trUtf8("Mezcla Auriculares (CUE a la izquierda / MASTER a la derecha):", "Headphone Mix (CUE left / MASTER right):"), juce::dontSendNotification);
+    cueVolumeLabel.setText(LanguageManager::trUtf8("Volumen Master de Auriculares:", "Headphone Master Volume:"), juce::dontSendNotification);
+
+    // Tab 3: MIDI
+    midiTitleLabel.setText(LanguageManager::trUtf8("Controladores USB MIDI", "USB MIDI Controllers"), juce::dontSendNotification);
+    midiDescLabel.setText(LanguageManager::trUtf8("DiscNativePro detecta automáticamente cualquier controladora DJ física conectada por USB (Pioneer DDJ, Hercules, Numark, Native Instruments). Mapea jog wheels, perillas de EQ, faders y pads.", "DiscNativePro automatically detects any USB physical DJ controller (Pioneer DDJ, Hercules, Numark, Native Instruments). Maps jog wheels, EQ knobs, faders and pads."), juce::dontSendNotification);
+    midiScanBtn.setButtonText(LanguageManager::trUtf8("Escanear Puertos", "Scan Ports"));
+    midiMonitorHeader.setText(LanguageManager::trUtf8("MONITOR DE SEÑALES MIDI EN VIVO", "LIVE MIDI SIGNAL MONITOR"), juce::dontSendNotification);
+    midiMonitorText.setText(LanguageManager::trUtf8("Esperando movimiento de fader, jog o pad...", "Waiting for fader, jog or pad movement..."), juce::dontSendNotification);
+
+    // Tab 5: Streaming
+    streamingSectionTitle.setText(LanguageManager::trUtf8("Integración de YouTube Streaming", "YouTube Streaming Integration"), juce::dontSendNotification);
+    streamingDescLabel.setText(LanguageManager::trUtf8("DiscNativePro permite buscar, mezclar y reproducir videos de YouTube en vivo directamente en las bandejas.\nPor defecto se utiliza Scraping Público para buscar sin necesidad de API Key.", "DiscNativePro lets you search, mix and play live YouTube videos directly on the decks.\nBy default, Public Scraping is used without needing an API Key."), juce::dontSendNotification);
+    apiKeyLabel.setText(LanguageManager::trUtf8("YouTube Data API v3 Key (Opcional - Para búsqueda oficial sin restricciones):", "YouTube Data API v3 Key (Optional - For official search without limits):"), juce::dontSendNotification);
+    apiKeyEditor.setTextToShowWhenEmpty(LanguageManager::trUtf8("Pega tu clave AIzaSy...", "Paste your AIzaSy key..."), juce::Colour::fromRGB(100, 108, 125));
+    clearApiKeyBtn.setText(LanguageManager::trUtf8("Borrar Key", "Clear Key"));
+    apiInfoCard.setText(LanguageManager::trUtf8("Modo Video en Bandejas:\n• Al soltar un video de YouTube en el Deck 1 o Deck 2, el Jog Wheel se transforma en reproductor de video de alta definición (WebKit).\n• Los faders de volumen y el Crossfader central mezclan fluidamente el audio y video entre bandejas.\n• Iniciar sesión en YouTube en Safari comparte tu sesión con WKWebView para reproducción Premium sin publicidad.", "Video Mode in Decks:\n• Dropping a YouTube video onto Deck 1 or 2 turns the Jog Wheel into an HD video player (WebKit).\n• Volume faders and Crossfader smoothly mix audio and video between decks.\n• Logging in to YouTube in Safari shares your session with WKWebView for ad-free Premium playback."), juce::dontSendNotification);
+
+    // Tab 6: IA
+    aiSectionTitle.setText(LanguageManager::trUtf8("Inteligencia Artificial (AI Smart Match)", "Artificial Intelligence (AI Smart Match)"), juce::dontSendNotification);
+    aiDescLabel.setText(LanguageManager::trUtf8("Analiza la pista en reproducción (local o YouTube) y sugiere mezclas armónicas por género, tempo y Camelot Key.\nElige tu proveedor preferido e ingresa tu clave API personal.", "Analyzes the currently playing track (local or YouTube) and suggests harmonic transitions by genre, tempo and Camelot Key.\nChoose your provider and enter your personal API key."), juce::dontSendNotification);
+    aiEnabledToggle.setButtonText(LanguageManager::trUtf8("Habilitar Recomendaciones Inteligentes de IA", "Enable AI Smart Recommendations"));
+    aiProviderLabel.setText(LanguageManager::trUtf8("Proveedor de Inteligencia Artificial:", "AI Provider:"), juce::dontSendNotification);
+    aiModelLabel.setText(LanguageManager::trUtf8("Modelo (editable: elige o pega uno nuevo):", "Model (editable: pick or paste a new one):"), juce::dontSendNotification);
+    aiApiKeyLabel.setText(LanguageManager::trUtf8("Clave API (API Key) del Proveedor Seleccionado:", "API Key for Selected Provider:"), juce::dontSendNotification);
+    aiApiKeyEditor.setTextToShowWhenEmpty(LanguageManager::trUtf8("Pega tu API Key...", "Paste your API Key..."), juce::Colour::fromRGB(100, 108, 125));
+    clearAiApiKeyBtn.setText(LanguageManager::trUtf8("Borrar Key", "Clear Key"));
+    aiInfoCard.setText(LanguageManager::trUtf8("Obtén tu API Key gratuita:\n• Google Gemini: aistudio.google.com (15 req/min sin costo)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com\n• OpenRouter: openrouter.ai (una key, 200+ modelos)", "Get your free API Key:\n• Google Gemini: aistudio.google.com (15 req/min free)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com\n• OpenRouter: openrouter.ai (one key, 200+ models)"), juce::dontSendNotification);
+
+    // Tab 7: Donar
+    donateTitleLabel.setText(LanguageManager::trUtf8("Apoya DiscNativePro", "Support DiscNativePro"), juce::dontSendNotification);
+    donateDescLabel.setText(LanguageManager::trUtf8("¿Estás disfrutando de DiscNativePro? Puedes apoyar el desarrollo y las futuras funcionalidades regalándome un café.", "Enjoying DiscNativePro? You can support development and upcoming features by buying me a coffee."), juce::dontSendNotification);
+    donateBtn.setText(LanguageManager::trUtf8("Donar un café en Cafecito", "Buy me a coffee on Cafecito"));
+    donateHintLabel.setText(LanguageManager::trUtf8("Se abrirá tu navegador. Aporte voluntario, ¡gracias por apoyar el proyecto!", "Your browser will open. Voluntary contribution — thanks for supporting the project!"), juce::dontSendNotification);
+    donateInfoCard.setText(LanguageManager::trUtf8("Tu aporte ayuda a:\n• Mantener el desarrollo activo y corregir errores.\n• Financiar hosting, licencias y pruebas en equipos reales.\n• Priorizar las funcionalidades que más pide la comunidad.", "Your contribution helps to:\n• Keep active development and bug fixes going.\n• Cover hosting, licenses and testing on real hardware.\n• Prioritize the features the community requests most."), juce::dontSendNotification);
+
+    updateTabVisibility();
+    repaint();
+}
+
 void SettingsModalComponent::setupDevicesTab()
 {
     // Embedded AudioDeviceSelectorComponent with up to 4 output channels
     audioDeviceSelector = std::make_unique<juce::AudioDeviceSelectorComponent>(
         audioEngine.getDeviceManager(), 0, 0, 2, 4, false, false, true, false);
-    addChildComponent(*audioDeviceSelector);
+    bodyContent.addChildComponent(*audioDeviceSelector);
 
     // Section: Enrutamiento de Canales de Audio
     routingSectionLabel.setText(juce::String::fromUTF8("Enrutamiento de Salidas de Audio (Pioneer DDJ / Multi-Canal)"), juce::dontSendNotification);
     routingSectionLabel.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     routingSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(routingSectionLabel);
+    bodyContent.addChildComponent(routingSectionLabel);
 
     // Master Routing
     masterRoutingLabel.setText(juce::String::fromUTF8("Salida Master (Altavoces / Club):"), juce::dontSendNotification);
     masterRoutingLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     masterRoutingLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(masterRoutingLabel);
+    bodyContent.addChildComponent(masterRoutingLabel);
 
     masterRoutingCombo.addItem(juce::String::fromUTF8("Canales 1 & 2 (Salida RCA Master DDJ-SB2)"), 1);
     masterRoutingCombo.addItem(juce::String::fromUTF8("Canales 3 & 4 (Salida Frontal DDJ-SB2)"), 2);
@@ -268,13 +464,13 @@ void SettingsModalComponent::setupDevicesTab()
     masterRoutingCombo.onChange = [this]() {
         audioEngine.setMasterChannelPair(masterRoutingCombo.getSelectedId() == 1 ? 0 : 1);
     };
-    addChildComponent(masterRoutingCombo);
+    bodyContent.addChildComponent(masterRoutingCombo);
 
     // CUE Routing
     cueRoutingLabel.setText(juce::String::fromUTF8("Salida Auriculares (Preescucha CUE):"), juce::dontSendNotification);
     cueRoutingLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     cueRoutingLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(cueRoutingLabel);
+    bodyContent.addChildComponent(cueRoutingLabel);
 
     cueRoutingCombo.addItem(juce::String::fromUTF8("Canales 3 & 4 (Jack Frontal Auriculares DDJ-SB2)"), 1);
     cueRoutingCombo.addItem(juce::String::fromUTF8("Canales 1 & 2 (Salida Compartida Master)"), 2);
@@ -282,13 +478,13 @@ void SettingsModalComponent::setupDevicesTab()
     cueRoutingCombo.onChange = [this]() {
         audioEngine.setCueChannelPair(cueRoutingCombo.getSelectedId() == 1 ? 1 : 0);
     };
-    addChildComponent(cueRoutingCombo);
+    bodyContent.addChildComponent(cueRoutingCombo);
 
     // Status Badge
     controllerDetectedBadge.setText(juce::String::fromUTF8("● Controladora DJ 4 Canales Detectada (Master: Ch 1-2 • Auriculares: Ch 3-4)"), juce::dontSendNotification);
     controllerDetectedBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
     controllerDetectedBadge.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-    addChildComponent(controllerDetectedBadge);
+    bodyContent.addChildComponent(controllerDetectedBadge);
 }
 
 void SettingsModalComponent::setupSoundTab()
@@ -297,7 +493,7 @@ void SettingsModalComponent::setupSoundTab()
     soundSectionEngine.setText(juce::String::fromUTF8("Motor de Audio CoreAudio"), juce::dontSendNotification);
     soundSectionEngine.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     soundSectionEngine.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(soundSectionEngine);
+    bodyContent.addChildComponent(soundSectionEngine);
 
     int sr = (int)audioEngine.getSampleRate();
     if (sr <= 0) sr = 44100;
@@ -305,12 +501,12 @@ void SettingsModalComponent::setupSoundTab()
                                 juce::dontSendNotification);
     sampleRateInfoLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     sampleRateInfoLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
-    addChildComponent(sampleRateInfoLabel);
+    bodyContent.addChildComponent(sampleRateInfoLabel);
 
     bufferSizeLabel.setText(juce::String::fromUTF8("Tamaño de Buffer de Audio / Latencia:"), juce::dontSendNotification);
     bufferSizeLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     bufferSizeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(bufferSizeLabel);
+    bodyContent.addChildComponent(bufferSizeLabel);
 
     bufferSizeCombo.addItem(juce::String::fromUTF8("128 muestras (2.9 ms • Ultra baja latencia interactiva)"), 1);
     bufferSizeCombo.addItem(juce::String::fromUTF8("256 muestras (5.8 ms • Baja latencia recomendada)"), 2);
@@ -323,67 +519,67 @@ void SettingsModalComponent::setupSoundTab()
     else if (curBlock <= 512) bufferSizeCombo.setSelectedId(3, juce::dontSendNotification);
     else bufferSizeCombo.setSelectedId(4, juce::dontSendNotification);
 
-    addChildComponent(bufferSizeCombo);
+    bodyContent.addChildComponent(bufferSizeCombo);
 
     // Section 2: Mezclador & Curvas
     soundSectionMixer.setText(juce::String::fromUTF8("Ecualizador & Crossfader"), juce::dontSendNotification);
     soundSectionMixer.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     soundSectionMixer.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(soundSectionMixer);
+    bodyContent.addChildComponent(soundSectionMixer);
 
     eqModeLabel.setText(juce::String::fromUTF8("Curva de Ecualizador (EQ Mode):"), juce::dontSendNotification);
     eqModeLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     eqModeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(eqModeLabel);
+    bodyContent.addChildComponent(eqModeLabel);
 
     eqModeCombo.addItem(juce::String::fromUTF8("Isolator (-∞ dB Full Kill • Corte total por banda)"), 1);
     eqModeCombo.addItem(juce::String::fromUTF8("Clásico (-24 dB a +6 dB • Curva analógica suave)"), 2);
     eqModeCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(eqModeCombo);
+    bodyContent.addChildComponent(eqModeCombo);
 
     crossfaderCurveLabel.setText(juce::String::fromUTF8("Curva de Crossfader por defecto:"), juce::dontSendNotification);
     crossfaderCurveLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     crossfaderCurveLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(crossfaderCurveLabel);
+    bodyContent.addChildComponent(crossfaderCurveLabel);
 
     crossfaderCurveCombo.addItem(juce::String::fromUTF8("Suave (Smooth • Transiciones fluidas)"), 1);
     crossfaderCurveCombo.addItem(juce::String::fromUTF8("Lineal (Linear • Mezcla progresiva)"), 2);
     crossfaderCurveCombo.addItem(juce::String::fromUTF8("Corte Rápido (Scratch • Corte instantáneo)"), 3);
     crossfaderCurveCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(crossfaderCurveCombo);
+    bodyContent.addChildComponent(crossfaderCurveCombo);
 
     // Section 3: Margen Dinámico & Limitador
     soundSectionMaster.setText(juce::String::fromUTF8("Margen Dinámico y Limitador Master"), juce::dontSendNotification);
     soundSectionMaster.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     soundSectionMaster.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(soundSectionMaster);
+    bodyContent.addChildComponent(soundSectionMaster);
 
     headroomLabel.setText(juce::String::fromUTF8("Margen Dinámico Master (Headroom):"), juce::dontSendNotification);
     headroomLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     headroomLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(headroomLabel);
+    bodyContent.addChildComponent(headroomLabel);
 
     headroomCombo.addItem(juce::String::fromUTF8("-3 dB (Recomendado para clubs y grabación)"), 1);
     headroomCombo.addItem(juce::String::fromUTF8("-6 dB (Margen amplio para mezclas intensas)"), 2);
     headroomCombo.addItem(juce::String::fromUTF8("0 dB (Sin margen / límite exacto)"), 3);
     headroomCombo.setSelectedId(1, juce::dontSendNotification);
-    addChildComponent(headroomCombo);
+    bodyContent.addChildComponent(headroomCombo);
 
     masterLimiterToggle.setButtonText(juce::String::fromUTF8("Limitador Master de Seguridad (Evita distorsión digital y clipping)"));
     masterLimiterToggle.setToggleState(true, juce::dontSendNotification);
     masterLimiterToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white.withAlpha(0.85f));
-    addChildComponent(masterLimiterToggle);
+    bodyContent.addChildComponent(masterLimiterToggle);
 
     // Section 4: Monitoreo & Auriculares (CUE)
     soundSectionPhones.setText(juce::String::fromUTF8("Monitoreo y Auriculares (Preescucha CUE)"), juce::dontSendNotification);
     soundSectionPhones.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     soundSectionPhones.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(soundSectionPhones);
+    bodyContent.addChildComponent(soundSectionPhones);
 
     cueMixLabel.setText(juce::String::fromUTF8("Mezcla Auriculares (CUE a la izquierda / MASTER a la derecha):"), juce::dontSendNotification);
     cueMixLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     cueMixLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(cueMixLabel);
+    bodyContent.addChildComponent(cueMixLabel);
 
     cueMixSlider.setRange(0.0, 1.0, 0.01);
     cueMixSlider.setValue(audioEngine.getMixer().getCueMix(), juce::dontSendNotification);
@@ -391,12 +587,12 @@ void SettingsModalComponent::setupSoundTab()
     cueMixSlider.onValueChange = [this]() {
         audioEngine.getMixer().setCueMix((float)cueMixSlider.getValue());
     };
-    addChildComponent(cueMixSlider);
+    bodyContent.addChildComponent(cueMixSlider);
 
     cueVolumeLabel.setText(juce::String::fromUTF8("Volumen Master de Auriculares:"), juce::dontSendNotification);
     cueVolumeLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     cueVolumeLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(cueVolumeLabel);
+    bodyContent.addChildComponent(cueVolumeLabel);
 
     cueVolumeSlider.setRange(0.0, 1.5, 0.01);
     cueVolumeSlider.setValue(audioEngine.getMixer().getPhonesVolume(), juce::dontSendNotification);
@@ -404,7 +600,7 @@ void SettingsModalComponent::setupSoundTab()
     cueVolumeSlider.onValueChange = [this]() {
         audioEngine.getMixer().setPhonesVolume((float)cueVolumeSlider.getValue());
     };
-    addChildComponent(cueVolumeSlider);
+    bodyContent.addChildComponent(cueVolumeSlider);
 }
 
 void SettingsModalComponent::setupMidiTab()
@@ -412,17 +608,17 @@ void SettingsModalComponent::setupMidiTab()
     midiTitleLabel.setText(juce::String::fromUTF8("Controladores USB MIDI"), juce::dontSendNotification);
     midiTitleLabel.setFont(juce::FontOptions(12.5f, juce::Font::bold));
     midiTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(46, 196, 182));
-    addChildComponent(midiTitleLabel);
+    bodyContent.addChildComponent(midiTitleLabel);
 
     midiDescLabel.setText(juce::String::fromUTF8("DiscNativePro detecta automáticamente cualquier controladora DJ física conectada por USB (Pioneer DDJ, Hercules, Numark, Native Instruments). Mapea jog wheels, perillas de EQ, faders y pads."),
                           juce::dontSendNotification);
     midiDescLabel.setFont(juce::FontOptions(11.0f));
     midiDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
-    addChildComponent(midiDescLabel);
+    bodyContent.addChildComponent(midiDescLabel);
 
     midiDevicesHeader.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     midiDevicesHeader.setColour(juce::Label::textColourId, juce::Colours::white);
-    addChildComponent(midiDevicesHeader);
+    bodyContent.addChildComponent(midiDevicesHeader);
 
     midiScanBtn.setButtonText(juce::String::fromUTF8("Escanear Puertos"));
     midiScanBtn.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(24, 28, 36));
@@ -431,17 +627,17 @@ void SettingsModalComponent::setupMidiTab()
         midi.rescanDevices();
         refreshMidiDevices();
     };
-    addChildComponent(midiScanBtn);
+    bodyContent.addChildComponent(midiScanBtn);
 
     midiMonitorHeader.setText(juce::String::fromUTF8("MONITOR DE SEÑALES MIDI EN VIVO"), juce::dontSendNotification);
     midiMonitorHeader.setFont(juce::FontOptions(9.5f, juce::Font::bold));
     midiMonitorHeader.setColour(juce::Label::textColourId, juce::Colour::fromRGB(100, 108, 125));
-    addChildComponent(midiMonitorHeader);
+    bodyContent.addChildComponent(midiMonitorHeader);
 
     midiMonitorText.setText(juce::String::fromUTF8("Esperando movimiento de fader, jog o pad..."), juce::dontSendNotification);
     midiMonitorText.setFont(juce::FontOptions("Menlo", 11.5f, juce::Font::plain));
     midiMonitorText.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
-    addChildComponent(midiMonitorText);
+    bodyContent.addChildComponent(midiMonitorText);
 
     midi.onMidiActivity = [this](const juce::String& desc) {
         midiMonitorText.setText(desc, juce::dontSendNotification);
@@ -455,24 +651,24 @@ void SettingsModalComponent::setupStreamingTab()
     streamingSectionTitle.setText(juce::String::fromUTF8("Integración de YouTube Streaming"), juce::dontSendNotification);
     streamingSectionTitle.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     streamingSectionTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
-    addChildComponent(streamingSectionTitle);
+    bodyContent.addChildComponent(streamingSectionTitle);
 
     streamingDescLabel.setText(juce::String::fromUTF8("DiscNativePro permite buscar, mezclar y reproducir videos de YouTube en vivo directamente en las bandejas.\nPor defecto se utiliza Scraping Público para buscar sin necesidad de API Key."), juce::dontSendNotification);
     streamingDescLabel.setFont(juce::FontOptions(10.5f));
     streamingDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(streamingDescLabel);
+    bodyContent.addChildComponent(streamingDescLabel);
 
     apiKeyLabel.setText(juce::String::fromUTF8("YouTube Data API v3 Key (Opcional - Para búsqueda oficial sin restricciones):"), juce::dontSendNotification);
     apiKeyLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     apiKeyLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
-    addChildComponent(apiKeyLabel);
+    bodyContent.addChildComponent(apiKeyLabel);
 
     apiKeyEditor.setTextToShowWhenEmpty("Pega tu clave AIzaSy...", juce::Colour::fromRGB(100, 108, 125));
     apiKeyEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
     apiKeyEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
     apiKeyEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(38, 43, 58));
     apiKeyEditor.setText(YouTubeService::getApiKey(), juce::dontSendNotification);
-    addChildComponent(apiKeyEditor);
+    bodyContent.addChildComponent(apiKeyEditor);
 
     clearApiKeyBtn.setText("Borrar Key");
     clearApiKeyBtn.setFontSize(10.5f);
@@ -486,65 +682,103 @@ void SettingsModalComponent::setupStreamingTab()
         YouTubeService::setApiKey("");
         updateTabVisibility();
     };
-    addChildComponent(clearApiKeyBtn);
+    bodyContent.addChildComponent(clearApiKeyBtn);
 
     apiStatusBadge.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    addChildComponent(apiStatusBadge);
+    bodyContent.addChildComponent(apiStatusBadge);
 
     apiInfoCard.setText(juce::String::fromUTF8("Modo Video en Bandejas:\n• Al soltar un video de YouTube en el Deck 1 o Deck 2, el Jog Wheel se transforma en reproductor de video de alta definición (WebKit).\n• Los faders de volumen y el Crossfader central mezclan fluidamente el audio y video entre bandejas.\n• Iniciar sesión en YouTube en Safari comparte tu sesión con WKWebView para reproducción Premium sin publicidad."), juce::dontSendNotification);
     apiInfoCard.setFont(juce::FontOptions(10.0f));
     apiInfoCard.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
-    addChildComponent(apiInfoCard);
+    apiInfoCard.setJustificationType(juce::Justification::topLeft);
+    bodyContent.addChildComponent(apiInfoCard);
 }
+
+namespace
+{
+AIProvider providerFromComboId(int id)
+{
+    switch (id)
+    {
+        case 1: return AIProvider::Gemini;
+        case 2: return AIProvider::OpenAI;
+        case 3: return AIProvider::Claude;
+        case 4: return AIProvider::DeepSeek;
+        case 5: return AIProvider::OpenRouter;
+        default: return AIProvider::Gemini;
+    }
+}
+
+int comboIdFromProvider(AIProvider p)
+{
+    switch (p)
+    {
+        case AIProvider::Gemini: return 1;
+        case AIProvider::OpenAI: return 2;
+        case AIProvider::Claude: return 3;
+        case AIProvider::DeepSeek: return 4;
+        case AIProvider::OpenRouter: return 5;
+    }
+    return 1;
+}
+} // namespace
 
 void SettingsModalComponent::setupAITab()
 {
     aiSectionTitle.setText(juce::String::fromUTF8("Inteligencia Artificial (AI Smart Match)"), juce::dontSendNotification);
     aiSectionTitle.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     aiSectionTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(192, 132, 252));
-    addChildComponent(aiSectionTitle);
+    bodyContent.addChildComponent(aiSectionTitle);
 
     aiDescLabel.setText(juce::String::fromUTF8("Analiza la pista en reproducción (local o YouTube) y sugiere mezclas armónicas por género, tempo y Camelot Key.\nElige tu proveedor preferido e ingresa tu clave API personal."), juce::dontSendNotification);
     aiDescLabel.setFont(juce::FontOptions(10.5f));
     aiDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    addChildComponent(aiDescLabel);
+    bodyContent.addChildComponent(aiDescLabel);
 
     aiEnabledToggle.setButtonText(juce::String::fromUTF8("Habilitar Recomendaciones Inteligentes de IA"));
     aiEnabledToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
     aiEnabledToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(168, 85, 247));
     aiEnabledToggle.setToggleState(AIService::isEnabled(), juce::dontSendNotification);
     aiEnabledToggle.onClick = [this]() { updateTabVisibility(); };
-    addChildComponent(aiEnabledToggle);
+    bodyContent.addChildComponent(aiEnabledToggle);
 
     aiProviderLabel.setText("Proveedor de Inteligencia Artificial:", juce::dontSendNotification);
     aiProviderLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     aiProviderLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
-    addChildComponent(aiProviderLabel);
+    bodyContent.addChildComponent(aiProviderLabel);
 
-    aiProviderCombo.addItem("Google Gemini (Gemini 2.0 Flash - Gratuito en AI Studio)", 1);
+    aiProviderCombo.addItem("Google Gemini (Flash - Gratuito en AI Studio)", 1);
     aiProviderCombo.addItem("OpenAI (ChatGPT / GPT-4o mini)", 2);
     aiProviderCombo.addItem("Anthropic Claude (Claude 3.5 Haiku)", 3);
     aiProviderCombo.addItem("DeepSeek (DeepSeek V3 / R1)", 4);
+    aiProviderCombo.addItem("OpenRouter (Key sk-or-v1...)", 5);
 
     auto curProv = AIService::getProvider();
-    int provId = (curProv == AIProvider::Gemini) ? 1 :
-                 (curProv == AIProvider::OpenAI) ? 2 :
-                 (curProv == AIProvider::Claude) ? 3 : 4;
+    int provId = comboIdFromProvider(curProv);
     aiProviderCombo.setSelectedId(provId, juce::dontSendNotification);
     aiProviderCombo.onChange = [this]() {
-        int id = aiProviderCombo.getSelectedId();
-        AIProvider p = (id == 1) ? AIProvider::Gemini :
-                       (id == 2) ? AIProvider::OpenAI :
-                       (id == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+        AIProvider p = providerFromComboId(aiProviderCombo.getSelectedId());
         aiApiKeyEditor.setText(AIService::getApiKey(p), juce::dontSendNotification);
+        refreshAiModelOptions();
         updateTabVisibility();
     };
-    addChildComponent(aiProviderCombo);
+    bodyContent.addChildComponent(aiProviderCombo);
+
+    // Modelo configurable por proveedor: ComboBox editable = presets + texto libre.
+    // ponytail: un solo control cubre selector y campo custom; evita un TextEditor extra.
+    aiModelLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    aiModelLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
+    bodyContent.addChildComponent(aiModelLabel);
+
+    aiModelCombo.setEditableText(true);
+    aiModelCombo.setJustificationType(juce::Justification::centredLeft);
+    refreshAiModelOptions();
+    bodyContent.addChildComponent(aiModelCombo);
 
     aiApiKeyLabel.setText("Clave API (API Key) del Proveedor Seleccionado:", juce::dontSendNotification);
     aiApiKeyLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
     aiApiKeyLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
-    addChildComponent(aiApiKeyLabel);
+    bodyContent.addChildComponent(aiApiKeyLabel);
 
     aiApiKeyEditor.setTextToShowWhenEmpty("Pega tu API Key...", juce::Colour::fromRGB(100, 108, 125));
     aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
@@ -553,7 +787,7 @@ void SettingsModalComponent::setupAITab()
     aiApiKeyEditor.setPasswordCharacter((juce::juce_wchar)'*');
     aiApiKeyEditor.setText(AIService::getApiKey(curProv), juce::dontSendNotification);
     aiApiKeyEditor.onTextChange = [this]() { updateTabVisibility(); };
-    addChildComponent(aiApiKeyEditor);
+    bodyContent.addChildComponent(aiApiKeyEditor);
 
     clearAiApiKeyBtn.setText("Borrar Key");
     clearAiApiKeyBtn.setFontSize(10.5f);
@@ -563,23 +797,86 @@ void SettingsModalComponent::setupAITab()
                                       juce::Colour::fromRGB(244, 63, 94),
                                       juce::Colour::fromRGB(45, 50, 65));
     clearAiApiKeyBtn.onClick = [this]() {
-        int id = aiProviderCombo.getSelectedId();
-        AIProvider p = (id == 1) ? AIProvider::Gemini :
-                       (id == 2) ? AIProvider::OpenAI :
-                       (id == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+        AIProvider p = providerFromComboId(aiProviderCombo.getSelectedId());
         aiApiKeyEditor.setText("", juce::dontSendNotification);
         AIService::setApiKey(p, "");
         updateTabVisibility();
     };
-    addChildComponent(clearAiApiKeyBtn);
+    bodyContent.addChildComponent(clearAiApiKeyBtn);
 
     aiStatusBadge.setFont(juce::FontOptions(11.0f, juce::Font::bold));
-    addChildComponent(aiStatusBadge);
+    bodyContent.addChildComponent(aiStatusBadge);
 
-    aiInfoCard.setText(juce::String::fromUTF8("Obtén tu API Key gratuita:\n• Google Gemini: aistudio.google.com (15 req/min sin costo)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com"), juce::dontSendNotification);
+    aiInfoCard.setText(juce::String::fromUTF8("Obtén tu API Key gratuita:\n• Google Gemini: aistudio.google.com (15 req/min sin costo)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com\n• OpenRouter: openrouter.ai (una key, 200+ modelos)"), juce::dontSendNotification);
     aiInfoCard.setFont(juce::FontOptions(10.5f));
     aiInfoCard.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
-    addChildComponent(aiInfoCard);
+    aiInfoCard.setJustificationType(juce::Justification::topLeft);
+    bodyContent.addChildComponent(aiInfoCard);
+}
+
+void SettingsModalComponent::setupDonateTab()
+{
+    donateTitleLabel.setText(juce::String::fromUTF8("Apoya DiscNativePro"), juce::dontSendNotification);
+    donateTitleLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    donateTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(251, 191, 36));
+    bodyContent.addChildComponent(donateTitleLabel);
+
+    donateDescLabel.setText(juce::String::fromUTF8("¿Estás disfrutando de DiscNativePro? Puedes apoyar el desarrollo y las futuras funcionalidades regalándome un café."), juce::dontSendNotification);
+    donateDescLabel.setFont(juce::FontOptions(11.0f));
+    donateDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(200, 205, 215));
+    donateDescLabel.setJustificationType(juce::Justification::topLeft);
+    bodyContent.addChildComponent(donateDescLabel);
+
+    donateBtn.setIcon(LucideIcons::IconType::Coffee, 15.0f);
+    donateBtn.setText(juce::String::fromUTF8("Donar un café en Cafecito"));
+    donateBtn.setFontSize(12.0f);
+    donateBtn.setCornerRadius(8.0f);
+    donateBtn.setCustomColours(juce::Colour::fromRGB(120, 53, 15),
+                               juce::Colours::white,
+                               juce::Colour::fromRGB(251, 191, 36),
+                               juce::Colour::fromRGB(251, 191, 36).withAlpha(0.6f));
+    donateBtn.onClick = []() {
+        juce::URL("https://cafecito.app/discnativepro").launchInDefaultBrowser();
+    };
+    bodyContent.addChildComponent(donateBtn);
+
+    donateHintLabel.setFont(juce::FontOptions(10.0f));
+    donateHintLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
+    donateHintLabel.setJustificationType(juce::Justification::centred);
+    bodyContent.addChildComponent(donateHintLabel);
+
+    donateInfoCard.setFont(juce::FontOptions(10.5f));
+    donateInfoCard.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
+    donateInfoCard.setJustificationType(juce::Justification::topLeft);
+    bodyContent.addChildComponent(donateInfoCard);
+}
+
+void SettingsModalComponent::refreshAiModelOptions()
+{
+    AIProvider p = providerFromComboId(aiProviderCombo.getSelectedId());
+
+    auto models = AIService::getAvailableModels(p);
+    auto current = AIService::getModel(p);
+
+    aiModelCombo.clear(juce::dontSendNotification);
+    for (int i = 0; i < models.size(); ++i)
+        aiModelCombo.addItem(models[i], i + 1);
+
+    bool found = false;
+    for (int i = 0; i < models.size(); ++i)
+    {
+        if (models[i].trim().equalsIgnoreCase(current.trim()))
+        {
+            aiModelCombo.setSelectedId(i + 1, juce::dontSendNotification);
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+    {
+        // Modelo custom guardado (o nuevo): mostrarlo como texto libre
+        aiModelCombo.setText(current, juce::dontSendNotification);
+    }
 }
 
 void SettingsModalComponent::refreshMidiDevices()
@@ -594,6 +891,9 @@ void SettingsModalComponent::updateTabVisibility()
 {
     // General components (Tab 0)
     bool isGeneral = (activeTab == 0);
+    languageSectionLabel.setVisible(isGeneral);
+    languageSelectLabel.setVisible(isGeneral);
+    languageCombo.setVisible(isGeneral);
     generalSectionDeck.setVisible(isGeneral);
     loadLockToggle.setVisible(isGeneral);
     jogModeLabel.setVisible(isGeneral);
@@ -601,6 +901,7 @@ void SettingsModalComponent::updateTabVisibility()
     pitchRangeLabel.setVisible(isGeneral);
     pitchRangeCombo.setVisible(isGeneral);
     autoCueToggle.setVisible(isGeneral);
+    ytAutoplayToggle.setVisible(isGeneral);
     generalSectionDisplay.setVisible(isGeneral);
     waveformFpsLabel.setVisible(isGeneral);
     waveformFpsCombo.setVisible(isGeneral);
@@ -612,7 +913,6 @@ void SettingsModalComponent::updateTabVisibility()
     recBrowseBtn.setVisible(isGeneral);
     recOpenBtn.setVisible(isGeneral);
     recResetBtn.setVisible(isGeneral);
-    appInfoLabel.setVisible(isGeneral);
     if (isGeneral)
         updateRecordingFolderUI();
 
@@ -631,12 +931,14 @@ void SettingsModalComponent::updateTabVisibility()
         bool is4Ch = audioEngine.is4ChannelOutputAvailable();
         if (is4Ch)
         {
-            controllerDetectedBadge.setText(juce::String::fromUTF8("● Controladora DJ 4 Canales Detectada (Master: Ch 1-2 • Auriculares: Ch 3-4)"), juce::dontSendNotification);
+            controllerDetectedBadge.setText(LanguageManager::trUtf8("● Controladora DJ 4 Canales Detectada (Master: Ch 1-2 • Auriculares: Ch 3-4)",
+                                                                    "● 4-Channel DJ Controller Detected (Master: Ch 1-2 • Headphones: Ch 3-4)"), juce::dontSendNotification);
             controllerDetectedBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
         }
         else
         {
-            controllerDetectedBadge.setText(juce::String::fromUTF8("● Dispositivo estéreo (2 canales). Para preescucha independiente selecciona una tarjeta de 4 canales como DDJ-SB2"), juce::dontSendNotification);
+            controllerDetectedBadge.setText(LanguageManager::trUtf8("● Dispositivo estéreo (2 canales). Para preescucha independiente selecciona una tarjeta de 4 canales como DDJ-SB2",
+                                                                    "● Stereo 2-channel device. For independent cueing select a 4-channel soundcard like DDJ-SB2"), juce::dontSendNotification);
             controllerDetectedBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
         }
     }
@@ -686,12 +988,14 @@ void SettingsModalComponent::updateTabVisibility()
         bool hasKey = apiKeyEditor.getText().trim().isNotEmpty();
         if (hasKey)
         {
-            apiStatusBadge.setText(juce::String::fromUTF8("● YouTube Data API v3 Clave Guardada (Sin Restricciones)"), juce::dontSendNotification);
+            apiStatusBadge.setText(LanguageManager::trUtf8("● YouTube Data API v3 Clave Guardada (Sin Restricciones)",
+                                                          "● YouTube Data API v3 Key Saved (Unrestricted)"), juce::dontSendNotification);
             apiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
         }
         else
         {
-            apiStatusBadge.setText(juce::String::fromUTF8("● Scraping Público Activo (Sin Clave API)"), juce::dontSendNotification);
+            apiStatusBadge.setText(LanguageManager::trUtf8("● Scraping Público Activo (Sin Clave API)",
+                                                          "● Public Scraping Active (No API Key)"), juce::dontSendNotification);
             apiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
         }
     }
@@ -703,6 +1007,8 @@ void SettingsModalComponent::updateTabVisibility()
     aiEnabledToggle.setVisible(isAi);
     aiProviderLabel.setVisible(isAi);
     aiProviderCombo.setVisible(isAi);
+    aiModelLabel.setVisible(isAi);
+    aiModelCombo.setVisible(isAi);
     aiApiKeyLabel.setVisible(isAi);
     aiApiKeyEditor.setVisible(isAi);
     aiStatusBadge.setVisible(isAi);
@@ -715,20 +1021,28 @@ void SettingsModalComponent::updateTabVisibility()
         bool enabled = aiEnabledToggle.getToggleState();
         if (hasKey && enabled)
         {
-            aiStatusBadge.setText(juce::String::fromUTF8("● Recomendaciones IA Activas (") + aiProviderCombo.getText() + ")", juce::dontSendNotification);
+            aiStatusBadge.setText(LanguageManager::trUtf8("● Recomendaciones IA Activas (", "● AI Recommendations Active (") + aiProviderCombo.getText() + " / " + aiModelCombo.getText().trim() + ")", juce::dontSendNotification);
             aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
         }
         else if (hasKey && !enabled)
         {
-            aiStatusBadge.setText(juce::String::fromUTF8("● Clave Guardada pero IA Desactivada"), juce::dontSendNotification);
+            aiStatusBadge.setText(LanguageManager::trUtf8("● Clave Guardada pero IA Desactivada", "● Key Saved but AI Disabled"), juce::dontSendNotification);
             aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(251, 191, 36));
         }
         else
         {
-            aiStatusBadge.setText(juce::String::fromUTF8("● Sin Clave API (Recomendaciones Desactivadas)"), juce::dontSendNotification);
+            aiStatusBadge.setText(LanguageManager::trUtf8("● Sin Clave API (Recomendaciones Desactivadas)", "● No API Key (Recommendations Disabled)"), juce::dontSendNotification);
             aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
         }
     }
+
+    // Donate components (Tab 7)
+    bool isDonate = (activeTab == 7);
+    donateTitleLabel.setVisible(isDonate);
+    donateDescLabel.setVisible(isDonate);
+    donateBtn.setVisible(isDonate);
+    donateHintLabel.setVisible(isDonate);
+    donateInfoCard.setVisible(isDonate);
 
     // Tab buttons styling
     auto updateBtnStyle = [](DjButton& btn, bool active) {
@@ -754,21 +1068,21 @@ void SettingsModalComponent::updateTabVisibility()
     updateBtnStyle(tabShortcutsBtn, activeTab == 4);
     updateBtnStyle(tabStreamingBtn, activeTab == 5);
     updateBtnStyle(tabAIBtn, activeTab == 6);
+    updateBtnStyle(tabDonateBtn, activeTab == 7);
 }
 
 void SettingsModalComponent::applySettings()
 {
-    // Apply YouTube API key
+    // Apply YouTube API key + video autoplay
     YouTubeService::setApiKey(apiKeyEditor.getText().trim());
+    YouTubeService::setVideoAutoplayEnabled(ytAutoplayToggle.getToggleState());
 
     // Apply AI Settings
     AIService::setEnabled(aiEnabledToggle.getToggleState());
-    int provId = aiProviderCombo.getSelectedId();
-    AIProvider prov = (provId == 1) ? AIProvider::Gemini :
-                      (provId == 2) ? AIProvider::OpenAI :
-                      (provId == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+    AIProvider prov = providerFromComboId(aiProviderCombo.getSelectedId());
     AIService::setProvider(prov);
     AIService::setApiKey(prov, aiApiKeyEditor.getText().trim());
+    AIService::setModel(prov, aiModelCombo.getText().trim());
 
     // Apply selected buffer size to audio engine device manager
     int id = bufferSizeCombo.getSelectedId();
@@ -800,18 +1114,11 @@ void SettingsModalComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour::fromRGB(45, 50, 66));
     g.drawRect(bounds, 1.0f);
 
-    // 2. Top Title Bar (#14161f)
-    auto titleBarArea = bounds.removeFromTop(80.0f);
-    g.setColour(juce::Colour::fromRGB(20, 22, 31));
-    g.fillRect(titleBarArea);
-
+    // 2. Tab Divider line (below the tab buttons row)
     g.setColour(juce::Colour::fromRGB(38, 43, 58));
-    g.drawHorizontalLine((int)titleBarArea.getBottom(), 0.0f, bounds.getWidth());
+    g.drawHorizontalLine(48, 0.0f, bounds.getWidth());
 
-    // 3. Tab Divider line
-    g.drawHorizontalLine(34, 0.0f, bounds.getWidth());
-
-    // 4. Footer Bar (#14161f)
+    // 3. Footer Bar (#14161f)
     auto footerArea = getLocalBounds().removeFromBottom(48);
     g.setColour(juce::Colour::fromRGB(20, 22, 31));
     g.fillRect(footerArea);
@@ -820,9 +1127,11 @@ void SettingsModalComponent::paint(juce::Graphics& g)
     g.drawHorizontalLine(footerArea.getY(), 0.0f, bounds.getWidth());
 
     // 5. If activeTab == 3 (MIDI), paint the device list box
-    if (activeTab == 3)
+    // (cajas en coords de bodyContent -> compensar scroll del viewport)
+    const auto contentOffset = bodyViewport.getPosition() - bodyViewport.getViewPosition();
+    if (activeTab == 3 && !midiDeviceListBox.isEmpty())
     {
-        juce::Rectangle<float> devBox(24.0f, 185.0f, (float)getWidth() - 48.0f, 130.0f);
+        auto devBox = (midiDeviceListBox + contentOffset).toFloat();
         if (midiConnectedDevices.isEmpty())
         {
             g.setColour(juce::Colour::fromRGB(17, 18, 25));
@@ -832,12 +1141,12 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
             g.setColour(juce::Colour::fromRGB(255, 159, 28));
             g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-            g.drawText(juce::String::fromUTF8("No se detectó ningún controlador"),
+            g.drawText(LanguageManager::trUtf8("No se detectó ningún controlador", "No controller detected"),
                        devBox.removeFromTop(75.0f), juce::Justification::centred, false);
 
             g.setColour(juce::Colour::fromRGB(120, 125, 140));
             g.setFont(juce::FontOptions(10.5f, juce::Font::plain));
-            g.drawText(juce::String::fromUTF8("Conecta un dispositivo USB DJ y pulsa 'Escanear Puertos'"),
+            g.drawText(LanguageManager::trUtf8("Conecta un dispositivo USB DJ y pulsa 'Escanear Puertos'", "Connect a USB DJ device and click 'Scan Ports'"),
                        devBox, juce::Justification::centred, false);
         }
         else
@@ -873,7 +1182,7 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
         g.setColour(juce::Colours::white);
         g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-        g.drawText(juce::String::fromUTF8("Atajos de Teclado Principales de DiscNativePro:"),
+        g.drawText(LanguageManager::trUtf8("Atajos de Teclado Principales de DiscNativePro:", "DiscNativePro Primary Keyboard Shortcuts:"),
                    contentArea.removeFromTop(24), juce::Justification::centredLeft, false);
 
         contentArea.removeFromTop(8);
@@ -918,35 +1227,35 @@ void SettingsModalComponent::paint(juce::Graphics& g)
             }
         };
 
-        drawCard(d1Card, juce::String::fromUTF8("Deck 1 (Canal Izquierdo):"), juce::Colour::fromRGB(0, 180, 216), {
+        drawCard(d1Card, LanguageManager::trUtf8("Deck 1 (Canal Izquierdo):", "Deck 1 (Left Channel):"), juce::Colour::fromRGB(0, 180, 216), {
             { "Q", "Play / Pause" },
-            { "W", "CUE (Pre-escucha)" },
-            { "E", "SYNC (Sincronizar BPM)" },
-            { "1-4", "Hot Cues 1 a 4" }
+            { "W", LanguageManager::trUtf8("CUE (Pre-escucha)", "CUE (Cueing)") },
+            { "E", LanguageManager::trUtf8("SYNC (Sincronizar BPM)", "SYNC (Sync BPM)") },
+            { "1-4", LanguageManager::trUtf8("Hot Cues 1 a 4", "Hot Cues 1 to 4") }
         });
 
-        drawCard(d2Card, juce::String::fromUTF8("Deck 2 (Canal Derecho):"), juce::Colour::fromRGB(148, 163, 184), {
+        drawCard(d2Card, LanguageManager::trUtf8("Deck 2 (Canal Derecho):", "Deck 2 (Right Channel):"), juce::Colour::fromRGB(148, 163, 184), {
             { "P", "Play / Pause" },
-            { "O", "CUE (Pre-escucha)" },
-            { "I", "SYNC (Sincronizar BPM)" },
-            { "7-0", "Hot Cues 1 a 4" }
+            { "O", LanguageManager::trUtf8("CUE (Pre-escucha)", "CUE (Cueing)") },
+            { "I", LanguageManager::trUtf8("SYNC (Sincronizar BPM)", "SYNC (Sync BPM)") },
+            { "7-0", LanguageManager::trUtf8("Hot Cues 1 a 4", "Hot Cues 1 to 4") }
         });
 
         contentArea.removeFromTop(12);
 
         // Mixer & General Card
         auto mixerCard = contentArea.removeFromTop(122);
-        drawCard(mixerCard, juce::String::fromUTF8("Mezclador & Control Global:"), juce::Colours::white, {
-            { juce::String::fromUTF8("⌘R / Ctrl+R"), juce::String::fromUTF8("Iniciar / Detener Grabación de Sesión (REC)") },
-            { "X | C | V",   juce::String::fromUTF8("Crossfader: Izquierda | Centro | Derecha") },
-            { "Espacio",     juce::String::fromUTF8("Activar / Desactivar Scratch en Deck activo") }
+        drawCard(mixerCard, LanguageManager::trUtf8("Mezclador & Control Global:", "Mixer & Global Control:"), juce::Colours::white, {
+            { juce::String::fromUTF8("⌘R / Ctrl+R"), LanguageManager::trUtf8("Iniciar / Detener Grabación de Sesión (REC)", "Start / Stop Session Recording (REC)") },
+            { "X | C | V",   LanguageManager::trUtf8("Crossfader: Izquierda | Centro | Derecha", "Crossfader: Left | Center | Right") },
+            { "Espacio",     LanguageManager::trUtf8("Activar / Desactivar Scratch en Deck activo", "Toggle Scratch on Active Deck") }
         });
     }
 
     // 7. If activeTab == 5 (Streaming), paint info card background
-    if (activeTab == 5)
+    if (activeTab == 5 && !streamingInfoCardBox.isEmpty())
     {
-        juce::Rectangle<float> cardArea(24.0f, 240.0f, (float)getWidth() - 48.0f, 160.0f);
+        auto cardArea = (streamingInfoCardBox + contentOffset).toFloat();
         g.setColour(juce::Colour::fromRGB(18, 20, 27));
         g.fillRoundedRectangle(cardArea, 8.0f);
         g.setColour(juce::Colour::fromRGB(40, 44, 60));
@@ -954,9 +1263,19 @@ void SettingsModalComponent::paint(juce::Graphics& g)
     }
 
     // 8. If activeTab == 6 (AI Match), paint info card background
-    if (activeTab == 6)
+    if (activeTab == 6 && !aiInfoCardBox.isEmpty())
     {
-        juce::Rectangle<float> cardArea(24.0f, 280.0f, (float)getWidth() - 48.0f, 90.0f);
+        auto cardArea = (aiInfoCardBox + contentOffset).toFloat();
+        g.setColour(juce::Colour::fromRGB(18, 20, 27));
+        g.fillRoundedRectangle(cardArea, 8.0f);
+        g.setColour(juce::Colour::fromRGB(40, 44, 60));
+        g.drawRoundedRectangle(cardArea, 8.0f, 1.0f);
+    }
+
+    // 9. If activeTab == 7 (Donar), paint info card background
+    if (activeTab == 7 && !donateCardBox.isEmpty())
+    {
+        auto cardArea = (donateCardBox + contentOffset).toFloat();
         g.setColour(juce::Colour::fromRGB(18, 20, 27));
         g.fillRoundedRectangle(cardArea, 8.0f);
         g.setColour(juce::Colour::fromRGB(40, 44, 60));
@@ -966,74 +1285,88 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
 void SettingsModalComponent::resized()
 {
-    // 1. Title bar (height 34px)
-    closeDotButton.setBounds(14, 11, 12, 12);
-    headerTitleLabel.setBounds(34, 6, 320, 22);
-
-    // 2. Tab buttons row (y: 38 to 76)
-    int tabW = 86;
+    // 1. Tab buttons row (y: 8 to 42) — 8 tabs, modal 720px wide
+    int tabW = 82;
     int tabH = 34;
     int spacing = 4;
-    int totalTabsW = tabW * 7 + spacing * 6;
+    int totalTabsW = tabW * 8 + spacing * 7;
     int startTabX = (getWidth() - totalTabsW) / 2;
 
-    tabGeneralBtn.setBounds(startTabX, 40, tabW, tabH);
-    tabDevicesBtn.setBounds(startTabX + (tabW + spacing) * 1, 40, tabW, tabH);
-    tabSoundBtn.setBounds(startTabX + (tabW + spacing) * 2, 40, tabW, tabH);
-    tabMidiBtn.setBounds(startTabX + (tabW + spacing) * 3, 40, tabW, tabH);
-    tabShortcutsBtn.setBounds(startTabX + (tabW + spacing) * 4, 40, tabW, tabH);
-    tabStreamingBtn.setBounds(startTabX + (tabW + spacing) * 5, 40, tabW, tabH);
-    tabAIBtn.setBounds(startTabX + (tabW + spacing) * 6, 40, tabW, tabH);
+    tabGeneralBtn.setBounds(startTabX, 8, tabW, tabH);
+    tabDevicesBtn.setBounds(startTabX + (tabW + spacing) * 1, 8, tabW, tabH);
+    tabSoundBtn.setBounds(startTabX + (tabW + spacing) * 2, 8, tabW, tabH);
+    tabMidiBtn.setBounds(startTabX + (tabW + spacing) * 3, 8, tabW, tabH);
+    tabShortcutsBtn.setBounds(startTabX + (tabW + spacing) * 4, 8, tabW, tabH);
+    tabStreamingBtn.setBounds(startTabX + (tabW + spacing) * 5, 8, tabW, tabH);
+    tabAIBtn.setBounds(startTabX + (tabW + spacing) * 6, 8, tabW, tabH);
+    tabDonateBtn.setBounds(startTabX + (tabW + spacing) * 7, 8, tabW, tabH);
 
-    // 3. Tab Body Area
-    auto body = getLocalBounds();
-    body.removeFromTop(88);
-    body.removeFromBottom(52);
-    body.reduce(20, 10);
+    // 2. Tab Body Area con scroll (el contenido vive en bodyContent, no en this)
+    auto bodyRect = getLocalBounds();
+    bodyRect.removeFromTop(56);
+    bodyRect.removeFromBottom(52);
+    bodyViewport.setBounds(bodyRect);
+
+    // Layout a un ancho dado. La altura necesaria no depende del ancho (filas fijas),
+    // así que se mide una vez y se re-ejecuta solo si aparece la scrollbar.
+    auto layoutTabs = [&](int contentW) {
+        juce::Rectangle<int> body(0, 0, contentW, 3000);
+        body.reduce(20, 10);
 
     // --- Tab 0: General Layout (Unconditionally set bounds so they are always ready) ---
     {
         auto gArea = body;
 
-        generalSectionDeck.setBounds(gArea.removeFromTop(20));
+        // Section 0: Idioma / Language
+        languageSectionLabel.setBounds(gArea.removeFromTop(18));
         gArea.removeFromTop(4);
-        loadLockToggle.setBounds(gArea.removeFromTop(24));
-        gArea.removeFromTop(6);
+        auto langRow = gArea.removeFromTop(24);
+        languageSelectLabel.setBounds(langRow.removeFromLeft(160));
+        languageCombo.setBounds(langRow);
+        gArea.removeFromTop(8);
+
+        generalSectionDeck.setBounds(gArea.removeFromTop(18));
+        gArea.removeFromTop(4);
+        loadLockToggle.setBounds(gArea.removeFromTop(22));
+        gArea.removeFromTop(4);
 
         auto row1 = gArea.removeFromTop(24);
         jogModeLabel.setBounds(row1.removeFromLeft(160));
         jogModeCombo.setBounds(row1);
-        gArea.removeFromTop(6);
+        gArea.removeFromTop(4);
 
         auto row2 = gArea.removeFromTop(24);
         pitchRangeLabel.setBounds(row2.removeFromLeft(160));
         pitchRangeCombo.setBounds(row2);
-        gArea.removeFromTop(6);
+        gArea.removeFromTop(4);
 
-        autoCueToggle.setBounds(gArea.removeFromTop(24));
-        gArea.removeFromTop(14);
+        autoCueToggle.setBounds(gArea.removeFromTop(22));
+        gArea.removeFromTop(4);
 
-        generalSectionDisplay.setBounds(gArea.removeFromTop(20));
-        gArea.removeFromTop(6);
+        ytAutoplayToggle.setBounds(gArea.removeFromTop(22));
+        gArea.removeFromTop(8);
+
+        generalSectionDisplay.setBounds(gArea.removeFromTop(18));
+        gArea.removeFromTop(4);
 
         auto row3 = gArea.removeFromTop(24);
         waveformFpsLabel.setBounds(row3.removeFromLeft(220));
         waveformFpsCombo.setBounds(row3);
-        gArea.removeFromTop(6);
+        gArea.removeFromTop(4);
 
         auto row4 = gArea.removeFromTop(24);
         waveformColorLabel.setBounds(row4.removeFromLeft(220));
         waveformColorCombo.setBounds(row4);
-        gArea.removeFromTop(12);
+        gArea.removeFromTop(8);
 
         // Section 3: Grabación de Sesiones
-        recSectionLabel.setBounds(gArea.removeFromTop(20));
+        recSectionLabel.setBounds(gArea.removeFromTop(18));
         gArea.removeFromTop(4);
 
         recFolderDescLabel.setBounds(gArea.removeFromTop(16));
         gArea.removeFromTop(4);
 
-        auto recRow = gArea.removeFromTop(26);
+        auto recRow = gArea.removeFromTop(24);
         recResetBtn.setBounds(recRow.removeFromRight(82));
         recRow.removeFromRight(6);
         recOpenBtn.setBounds(recRow.removeFromRight(102));
@@ -1041,9 +1374,9 @@ void SettingsModalComponent::resized()
         recBrowseBtn.setBounds(recRow.removeFromRight(96));
         recRow.removeFromRight(6);
         recFolderEditor.setBounds(recRow);
-        gArea.removeFromTop(12);
+        gArea.removeFromTop(8);
 
-        appInfoLabel.setBounds(gArea.removeFromTop(20));
+        appInfoLabel.setBounds(gArea.removeFromTop(18));
     }
 
     // --- Tab 1: Devices Layout (Unconditionally set bounds) ---
@@ -1134,7 +1467,9 @@ void SettingsModalComponent::resized()
         midiDevicesHeader.setBounds(devHeaderRow.removeFromLeft(250));
         midiScanBtn.setBounds(devHeaderRow.removeFromRight(130));
 
-        mArea.removeFromTop(142); // space occupied by device list box painted in paint()
+        mArea.removeFromTop(8);
+        midiDeviceListBox = mArea.removeFromTop(130);
+        mArea.removeFromTop(14);
 
         midiMonitorHeader.setBounds(mArea.removeFromTop(18));
         mArea.removeFromTop(2);
@@ -1157,11 +1492,12 @@ void SettingsModalComponent::resized()
         keyRow.removeFromRight(8);
         apiKeyEditor.setBounds(keyRow);
 
-        stArea.removeFromTop(6);
+        stArea.removeFromTop(8);
         apiStatusBadge.setBounds(stArea.removeFromTop(20));
-        stArea.removeFromTop(16);
+        stArea.removeFromTop(12);
 
-        apiInfoCard.setBounds(stArea.removeFromTop(140).reduced(8, 6));
+        streamingInfoCardBox = stArea.removeFromTop(120);
+        apiInfoCard.setBounds(streamingInfoCardBox.reduced(12, 10));
     }
 
     // --- Tab 6: AI Match Layout (Unconditionally set bounds) ---
@@ -1180,6 +1516,11 @@ void SettingsModalComponent::resized()
         aiProviderCombo.setBounds(provRow);
         aiArea.removeFromTop(8);
 
+        auto modelRow = aiArea.removeFromTop(26);
+        aiModelLabel.setBounds(modelRow.removeFromLeft(210));
+        aiModelCombo.setBounds(modelRow);
+        aiArea.removeFromTop(8);
+
         aiApiKeyLabel.setBounds(aiArea.removeFromTop(20));
         aiArea.removeFromTop(4);
 
@@ -1188,16 +1529,53 @@ void SettingsModalComponent::resized()
         keyRow.removeFromRight(8);
         aiApiKeyEditor.setBounds(keyRow);
 
-        aiArea.removeFromTop(6);
+        aiArea.removeFromTop(8);
         aiStatusBadge.setBounds(aiArea.removeFromTop(20));
-        aiArea.removeFromTop(10);
+        aiArea.removeFromTop(12);
 
-        aiInfoCard.setBounds(aiArea.removeFromTop(85).reduced(4, 2));
+        aiInfoCardBox = aiArea.removeFromTop(84);
+        aiInfoCard.setBounds(aiInfoCardBox.reduced(12, 10));
     }
 
-    // 4. Footer buttons
+    // --- Tab 7: Donar Layout (Unconditionally set bounds) ---
+    {
+        auto dArea = body;
+        donateTitleLabel.setBounds(dArea.removeFromTop(22));
+        dArea.removeFromTop(4);
+        donateDescLabel.setBounds(dArea.removeFromTop(44));
+        dArea.removeFromTop(12);
+
+        auto btnRow = dArea.removeFromTop(36);
+        int btnW = 300;
+        donateBtn.setBounds(btnRow.withSizeKeepingCentre(btnW, 36));
+        dArea.removeFromTop(6);
+
+        donateHintLabel.setBounds(dArea.removeFromTop(18));
+        dArea.removeFromTop(12);
+
+        donateCardBox = dArea.removeFromTop(110);
+        donateInfoCard.setBounds(donateCardBox.reduced(12, 10));
+    }
+
+    }; // layoutTabs
+
+    int availW = juce::jmax(100, bodyViewport.getWidth());
+    int availH = juce::jmax(100, bodyViewport.getHeight());
+    layoutTabs(availW);
+    int neededH = 20;
+    for (auto* c : bodyContent.getChildren())
+        if (c->isVisible())
+            neededH = juce::jmax(neededH, c->getBottom() + 12);
+    int contentW = availW;
+    if (neededH > availH)
+    {
+        contentW = juce::jmax(100, availW - bodyViewport.getScrollBarThickness());
+        layoutTabs(contentW);
+    }
+    bodyContent.setBounds(0, 0, contentW, juce::jmax(neededH, availH));
+
+    // 3. Footer buttons
     int footerY = getHeight() - 38;
-    helpButton.setBounds(18, footerY, 28, 26);
     applyButton.setBounds(getWidth() - 96, footerY, 80, 26);
     undoButton.setBounds(getWidth() - 186, footerY, 80, 26);
 }

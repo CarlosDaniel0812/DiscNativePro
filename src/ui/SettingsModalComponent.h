@@ -6,10 +6,12 @@
 #include "../audio/AudioEngine.h"
 #include "../midi/MidiManager.h"
 #include "../services/AIService.h"
+#include "../services/LanguageManager.h"
 #include "LucideIcons.h"
 #include "DjButton.h"
 
-class SettingsModalComponent : public juce::Component
+class SettingsModalComponent : public juce::Component,
+                               public LanguageManager::Listener
 {
 public:
     SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr);
@@ -17,6 +19,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
     std::function<void()> onClose;
 
@@ -27,18 +31,16 @@ private:
     void setupMidiTab();
     void setupStreamingTab();
     void setupAITab();
+    void setupDonateTab();
     void refreshMidiDevices();
     void updateTabVisibility();
     void applySettings();
     void updateRecordingFolderUI();
+    void refreshAiModelOptions();
 
     AudioEngine& audioEngine;
     MidiManager& midi;
-    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA
-
-    // Header controls
-    juce::TextButton closeDotButton;
-    juce::Label headerTitleLabel;
+    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA, 7: Donar
 
     // Tab buttons
     DjButton tabGeneralBtn;
@@ -48,8 +50,13 @@ private:
     DjButton tabShortcutsBtn;
     DjButton tabStreamingBtn;
     DjButton tabAIBtn;
+    DjButton tabDonateBtn;
 
     // --- Tab 0: General Controls ---
+    juce::Label languageSectionLabel;
+    juce::Label languageSelectLabel;
+    juce::ComboBox languageCombo;
+
     juce::Label generalSectionDeck;
     juce::ToggleButton loadLockToggle;
     juce::Label jogModeLabel;
@@ -57,6 +64,7 @@ private:
     juce::Label pitchRangeLabel;
     juce::ComboBox pitchRangeCombo;
     juce::ToggleButton autoCueToggle;
+    juce::ToggleButton ytAutoplayToggle;
 
     juce::Label generalSectionDisplay;
     juce::Label waveformFpsLabel;
@@ -71,8 +79,6 @@ private:
     DjButton recOpenBtn;
     DjButton recResetBtn;
     std::unique_ptr<juce::FileChooser> fileChooser;
-
-    juce::Label appInfoLabel;
 
     // --- Tab 1: Dispositivos Controls ---
     std::unique_ptr<juce::AudioDeviceSelectorComponent> audioDeviceSelector;
@@ -133,16 +139,35 @@ private:
     juce::ToggleButton aiEnabledToggle;
     juce::Label aiProviderLabel;
     juce::ComboBox aiProviderCombo;
+    juce::Label aiModelLabel;
+    juce::ComboBox aiModelCombo;
     juce::Label aiApiKeyLabel;
     juce::TextEditor aiApiKeyEditor;
     juce::Label aiStatusBadge;
     juce::Label aiInfoCard;
     DjButton clearAiApiKeyBtn;
 
+    // --- Tab 7: Donaciones (Cafecito) Controls ---
+    juce::Label donateTitleLabel;
+    juce::Label donateDescLabel;
+    DjButton donateBtn;
+    juce::Label donateHintLabel;
+    juce::Label donateInfoCard;
+
     // --- Footer Controls ---
-    DjButton helpButton;
     juce::TextButton undoButton { "Deshacer" };
     juce::TextButton applyButton { "Aplicar" };
+    juce::Label appInfoLabel;
+
+    // Cuerpo con scroll vertical (solo hace scroll si la tab desborda)
+    juce::Viewport bodyViewport;
+    juce::Component bodyContent;
+
+    // Dynamic card layout boxes computed in resized()
+    juce::Rectangle<int> midiDeviceListBox;
+    juce::Rectangle<int> streamingInfoCardBox;
+    juce::Rectangle<int> aiInfoCardBox;
+    juce::Rectangle<int> donateCardBox;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SettingsModalComponent)
 };
