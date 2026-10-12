@@ -5,6 +5,7 @@
 #include "DjButton.h"
 #include "LucideIcons.h"
 #include "FolderTreeComponent.h"
+#include "AIMatchView.h"
 #include <vector>
 #include <functional>
 
@@ -73,24 +74,27 @@ public:
     juce::File getSelectedTrackFile() const;
     bool isFocusOnFolders() const { return isBrowsingFolders; }
 
-    enum class LibraryMode { Local, YouTube };
+    enum class LibraryMode { Local, YouTube, AIMatch };
     void setLibraryMode(LibraryMode mode);
     LibraryMode getLibraryMode() const { return currentMode; }
+    void updateActiveTrackContext(const CurrentTrackContext& ctx);
 
     std::function<void(int deckIndex, const juce::File& file)> onLoadTrack;
     std::function<void(int deckIndex, const struct YouTubeSearchResult& video)> onLoadYouTubeTrack;
     std::function<void(const std::vector<TrackItem>&)> onStartAutomix;
     std::function<void()> onStopAutomix;
+    std::function<void()> onOpenSettings;
 
 private:
     juce::AudioFormatManager& formatManager;
 
     LibraryMode currentMode { LibraryMode::Local };
     std::unique_ptr<class YouTubeLibraryView> youtubeView;
+    std::unique_ptr<AIMatchView> aiMatchView;
 
     // 1. Far-Left Vertical Icon Rail
     DjButton railIcon1; // Music (cyan)
-    DjButton railIcon2; // Radio (coral/red)
+    DjButton railIcon2; // AI Match ✨ (purple)
     DjButton railIcon3; // Disc (turntable)
     DjButton railIcon4; // Tv
     DjButton railIcon5; // MoreHorizontal

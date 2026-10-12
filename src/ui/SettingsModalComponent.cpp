@@ -38,6 +38,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupTabBtn(tabMidiBtn, LucideIcons::IconType::Zap, "MIDI", 3);
     setupTabBtn(tabShortcutsBtn, LucideIcons::IconType::Keyboard, "Shortcuts", 4);
     setupTabBtn(tabStreamingBtn, LucideIcons::IconType::Tv, "Streaming", 5);
+    setupTabBtn(tabAIBtn, LucideIcons::IconType::Sparkles, "IA Match", 6);
 
     // 3. Setup Tab Contents
     setupGeneralTab();
@@ -45,6 +46,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupSoundTab();
     setupMidiTab();
     setupStreamingTab();
+    setupAITab();
 
     // 4. Footer controls
     helpButton.setText("?");
@@ -414,6 +416,91 @@ void SettingsModalComponent::setupStreamingTab()
     addChildComponent(apiInfoCard);
 }
 
+void SettingsModalComponent::setupAITab()
+{
+    aiSectionTitle.setText(juce::String::fromUTF8("Inteligencia Artificial (AI Smart Match)"), juce::dontSendNotification);
+    aiSectionTitle.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    aiSectionTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(192, 132, 252));
+    addChildComponent(aiSectionTitle);
+
+    aiDescLabel.setText(juce::String::fromUTF8("Analiza la pista en reproducción (local o YouTube) y sugiere mezclas armónicas por género, tempo y Camelot Key.\nElige tu proveedor preferido e ingresa tu clave API personal."), juce::dontSendNotification);
+    aiDescLabel.setFont(juce::FontOptions(10.5f));
+    aiDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
+    addChildComponent(aiDescLabel);
+
+    aiEnabledToggle.setButtonText(juce::String::fromUTF8("Habilitar Recomendaciones Inteligentes de IA"));
+    aiEnabledToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white);
+    aiEnabledToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour::fromRGB(168, 85, 247));
+    aiEnabledToggle.setToggleState(AIService::isEnabled(), juce::dontSendNotification);
+    aiEnabledToggle.onClick = [this]() { updateTabVisibility(); };
+    addChildComponent(aiEnabledToggle);
+
+    aiProviderLabel.setText("Proveedor de Inteligencia Artificial:", juce::dontSendNotification);
+    aiProviderLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    aiProviderLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
+    addChildComponent(aiProviderLabel);
+
+    aiProviderCombo.addItem("Google Gemini (Gemini 2.0 Flash - Gratuito en AI Studio)", 1);
+    aiProviderCombo.addItem("OpenAI (ChatGPT / GPT-4o mini)", 2);
+    aiProviderCombo.addItem("Anthropic Claude (Claude 3.5 Haiku)", 3);
+    aiProviderCombo.addItem("DeepSeek (DeepSeek V3 / R1)", 4);
+
+    auto curProv = AIService::getProvider();
+    int provId = (curProv == AIProvider::Gemini) ? 1 :
+                 (curProv == AIProvider::OpenAI) ? 2 :
+                 (curProv == AIProvider::Claude) ? 3 : 4;
+    aiProviderCombo.setSelectedId(provId, juce::dontSendNotification);
+    aiProviderCombo.onChange = [this]() {
+        int id = aiProviderCombo.getSelectedId();
+        AIProvider p = (id == 1) ? AIProvider::Gemini :
+                       (id == 2) ? AIProvider::OpenAI :
+                       (id == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+        aiApiKeyEditor.setText(AIService::getApiKey(p), juce::dontSendNotification);
+        updateTabVisibility();
+    };
+    addChildComponent(aiProviderCombo);
+
+    aiApiKeyLabel.setText("Clave API (API Key) del Proveedor Seleccionado:", juce::dontSendNotification);
+    aiApiKeyLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    aiApiKeyLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
+    addChildComponent(aiApiKeyLabel);
+
+    aiApiKeyEditor.setTextToShowWhenEmpty("Pega tu API Key...", juce::Colour::fromRGB(100, 108, 125));
+    aiApiKeyEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
+    aiApiKeyEditor.setColour(juce::TextEditor::textColourId, juce::Colours::white);
+    aiApiKeyEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(38, 43, 58));
+    aiApiKeyEditor.setPasswordCharacter((juce::juce_wchar)'*');
+    aiApiKeyEditor.setText(AIService::getApiKey(curProv), juce::dontSendNotification);
+    aiApiKeyEditor.onTextChange = [this]() { updateTabVisibility(); };
+    addChildComponent(aiApiKeyEditor);
+
+    clearAiApiKeyBtn.setText("Borrar Key");
+    clearAiApiKeyBtn.setFontSize(10.5f);
+    clearAiApiKeyBtn.setCornerRadius(5.0f);
+    clearAiApiKeyBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                                      juce::Colour::fromRGB(244, 63, 94),
+                                      juce::Colour::fromRGB(244, 63, 94),
+                                      juce::Colour::fromRGB(45, 50, 65));
+    clearAiApiKeyBtn.onClick = [this]() {
+        int id = aiProviderCombo.getSelectedId();
+        AIProvider p = (id == 1) ? AIProvider::Gemini :
+                       (id == 2) ? AIProvider::OpenAI :
+                       (id == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+        aiApiKeyEditor.setText("", juce::dontSendNotification);
+        AIService::setApiKey(p, "");
+        updateTabVisibility();
+    };
+    addChildComponent(clearAiApiKeyBtn);
+
+    aiStatusBadge.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    addChildComponent(aiStatusBadge);
+
+    aiInfoCard.setText(juce::String::fromUTF8("Obtén tu API Key gratuita:\n• Google Gemini: aistudio.google.com (15 req/min sin costo)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com"), juce::dontSendNotification);
+    aiInfoCard.setFont(juce::FontOptions(10.5f));
+    aiInfoCard.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
+    addChildComponent(aiInfoCard);
+}
+
 void SettingsModalComponent::refreshMidiDevices()
 {
     midiConnectedDevices = midi.getConnectedDeviceNames();
@@ -520,6 +607,40 @@ void SettingsModalComponent::updateTabVisibility()
         }
     }
 
+    // AI Components (Tab 6)
+    bool isAi = (activeTab == 6);
+    aiSectionTitle.setVisible(isAi);
+    aiDescLabel.setVisible(isAi);
+    aiEnabledToggle.setVisible(isAi);
+    aiProviderLabel.setVisible(isAi);
+    aiProviderCombo.setVisible(isAi);
+    aiApiKeyLabel.setVisible(isAi);
+    aiApiKeyEditor.setVisible(isAi);
+    aiStatusBadge.setVisible(isAi);
+    aiInfoCard.setVisible(isAi);
+    clearAiApiKeyBtn.setVisible(isAi);
+
+    if (isAi)
+    {
+        bool hasKey = aiApiKeyEditor.getText().trim().isNotEmpty();
+        bool enabled = aiEnabledToggle.getToggleState();
+        if (hasKey && enabled)
+        {
+            aiStatusBadge.setText(juce::String::fromUTF8("● Recomendaciones IA Activas (") + aiProviderCombo.getText() + ")", juce::dontSendNotification);
+            aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
+        }
+        else if (hasKey && !enabled)
+        {
+            aiStatusBadge.setText(juce::String::fromUTF8("● Clave Guardada pero IA Desactivada"), juce::dontSendNotification);
+            aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(251, 191, 36));
+        }
+        else
+        {
+            aiStatusBadge.setText(juce::String::fromUTF8("● Sin Clave API (Recomendaciones Desactivadas)"), juce::dontSendNotification);
+            aiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
+        }
+    }
+
     // Tab buttons styling
     auto updateBtnStyle = [](DjButton& btn, bool active) {
         if (active)
@@ -543,12 +664,22 @@ void SettingsModalComponent::updateTabVisibility()
     updateBtnStyle(tabMidiBtn, activeTab == 3);
     updateBtnStyle(tabShortcutsBtn, activeTab == 4);
     updateBtnStyle(tabStreamingBtn, activeTab == 5);
+    updateBtnStyle(tabAIBtn, activeTab == 6);
 }
 
 void SettingsModalComponent::applySettings()
 {
     // Apply YouTube API key
     YouTubeService::setApiKey(apiKeyEditor.getText().trim());
+
+    // Apply AI Settings
+    AIService::setEnabled(aiEnabledToggle.getToggleState());
+    int provId = aiProviderCombo.getSelectedId();
+    AIProvider prov = (provId == 1) ? AIProvider::Gemini :
+                      (provId == 2) ? AIProvider::OpenAI :
+                      (provId == 3) ? AIProvider::Claude : AIProvider::DeepSeek;
+    AIService::setProvider(prov);
+    AIService::setApiKey(prov, aiApiKeyEditor.getText().trim());
 
     // Apply selected buffer size to audio engine device manager
     int id = bufferSizeCombo.getSelectedId();
@@ -728,6 +859,16 @@ void SettingsModalComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour::fromRGB(40, 44, 60));
         g.drawRoundedRectangle(cardArea, 8.0f, 1.0f);
     }
+
+    // 8. If activeTab == 6 (AI Match), paint info card background
+    if (activeTab == 6)
+    {
+        juce::Rectangle<float> cardArea(24.0f, 280.0f, (float)getWidth() - 48.0f, 90.0f);
+        g.setColour(juce::Colour::fromRGB(18, 20, 27));
+        g.fillRoundedRectangle(cardArea, 8.0f);
+        g.setColour(juce::Colour::fromRGB(40, 44, 60));
+        g.drawRoundedRectangle(cardArea, 8.0f, 1.0f);
+    }
 }
 
 void SettingsModalComponent::resized()
@@ -737,10 +878,10 @@ void SettingsModalComponent::resized()
     headerTitleLabel.setBounds(34, 6, 320, 22);
 
     // 2. Tab buttons row (y: 38 to 76)
-    int tabW = 96;
+    int tabW = 86;
     int tabH = 34;
-    int spacing = 5;
-    int totalTabsW = tabW * 6 + spacing * 5;
+    int spacing = 4;
+    int totalTabsW = tabW * 7 + spacing * 6;
     int startTabX = (getWidth() - totalTabsW) / 2;
 
     tabGeneralBtn.setBounds(startTabX, 40, tabW, tabH);
@@ -749,6 +890,7 @@ void SettingsModalComponent::resized()
     tabMidiBtn.setBounds(startTabX + (tabW + spacing) * 3, 40, tabW, tabH);
     tabShortcutsBtn.setBounds(startTabX + (tabW + spacing) * 4, 40, tabW, tabH);
     tabStreamingBtn.setBounds(startTabX + (tabW + spacing) * 5, 40, tabW, tabH);
+    tabAIBtn.setBounds(startTabX + (tabW + spacing) * 6, 40, tabW, tabH);
 
     // 3. Tab Body Area
     auto body = getLocalBounds();
@@ -910,6 +1052,37 @@ void SettingsModalComponent::resized()
         stArea.removeFromTop(16);
 
         apiInfoCard.setBounds(stArea.removeFromTop(140).reduced(8, 6));
+    }
+
+    // --- Tab 6: AI Match Layout (Unconditionally set bounds) ---
+    {
+        auto aiArea = body;
+        aiSectionTitle.setBounds(aiArea.removeFromTop(22));
+        aiArea.removeFromTop(4);
+        aiDescLabel.setBounds(aiArea.removeFromTop(34));
+        aiArea.removeFromTop(8);
+
+        aiEnabledToggle.setBounds(aiArea.removeFromTop(24));
+        aiArea.removeFromTop(8);
+
+        auto provRow = aiArea.removeFromTop(26);
+        aiProviderLabel.setBounds(provRow.removeFromLeft(210));
+        aiProviderCombo.setBounds(provRow);
+        aiArea.removeFromTop(8);
+
+        aiApiKeyLabel.setBounds(aiArea.removeFromTop(20));
+        aiArea.removeFromTop(4);
+
+        auto keyRow = aiArea.removeFromTop(28);
+        clearAiApiKeyBtn.setBounds(keyRow.removeFromRight(90));
+        keyRow.removeFromRight(8);
+        aiApiKeyEditor.setBounds(keyRow);
+
+        aiArea.removeFromTop(6);
+        aiStatusBadge.setBounds(aiArea.removeFromTop(20));
+        aiArea.removeFromTop(10);
+
+        aiInfoCard.setBounds(aiArea.removeFromTop(85).reduced(4, 2));
     }
 
     // 4. Footer buttons

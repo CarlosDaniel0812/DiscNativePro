@@ -42,6 +42,7 @@ MainComponent::MainComponent()
     // FX Panel toggle
     topBar.onFxClicked = [this]() {
         isFxPanelVisible = !isFxPanelVisible;
+        topBar.setFxActive(isFxPanelVisible);
         fxPanel.setVisible(isFxPanelVisible);
         resized();
     };
@@ -83,6 +84,8 @@ MainComponent::MainComponent()
     };
 
     addChildComponent(fxPanel);
+    fxPanel.setVisible(isFxPanelVisible);
+    topBar.setFxActive(isFxPanelVisible);
     addAndMakeVisible(topBar);
     addAndMakeVisible(deck1);
     addAndMakeVisible(mixer);
@@ -116,6 +119,10 @@ MainComponent::MainComponent()
     };
     library.onStopAutomix = [this]() {
         stopAutomix();
+    };
+    library.onOpenSettings = [this]() {
+        if (topBar.onSettingsClicked)
+            topBar.onSettingsClicked();
     };
 
     // Connect MIDI hardware browser and deck loader
@@ -190,6 +197,37 @@ void MainComponent::timerCallback()
         float xfaderGain2 = (xfader >= 0.0f) ? 1.0f : (1.0f + xfader);
         float masterVol = audioEngine.getMixer().getMasterVolume();
         deck2.setVideoVolume(juce::jlimit(0.0f, 1.0f, ch2Fader * xfaderGain2 * masterVol));
+    }
+
+    // Periodically update active track context for AI Match (~0.5s interval)
+    static int aiContextTick = 0;
+    if (++aiContextTick >= 15)
+    {
+        aiContextTick = 0;
+        CurrentTrackContext ctx;
+        float xfader = audioEngine.getMixer().getCrossfader();
+        bool d1Playing = deck1.isPlaying() || deck1.isVideoPlayingActive();
+        bool d2Playing = deck2.isPlaying() || deck2.isVideoPlayingActive();
+
+        int activeDeckIdx = 0;
+        if (d2Playing && !d1Playing)
+            activeDeckIdx = 1;
+        else if (d1Playing && !d2Playing)
+            activeDeckIdx = 0;
+        else
+            activeDeckIdx = (xfader > 0.0f) ? 1 : 0;
+
+        auto& activeDeckComp = (activeDeckIdx == 0) ? deck1 : deck2;
+        if (activeDeckComp.isLoaded())
+        {
+            ctx.activeDeck = activeDeckIdx;
+            ctx.title = activeDeckComp.getTrackTitle();
+            ctx.artist = activeDeckComp.getTrackArtist();
+            ctx.bpm = activeDeckComp.getBpm();
+            ctx.key = activeDeckComp.getTrackKey();
+            ctx.isVideo = activeDeckComp.isVideoModeActive();
+            library.updateActiveTrackContext(ctx);
+        }
     }
 
     if (!automixActive)
@@ -297,16 +335,15 @@ void MainComponent::resized()
     // 1. Top Bar header (40px)
     topBar.setBounds(area.removeFromTop(40));
 
-    // 2. Optional FX Panel (48px)
+    float totalRemainingHeight = static_cast<float>(area.getHeight());
+    int libHeight = juce::jlimit(190, 480, static_cast<int>(totalRemainingHeight * (isFxPanelVisible ? 0.32f : 0.38f)));
+    library.setBounds(area.removeFromBottom(libHeight));
+
+    // 3. Optional FX Strip (54px) directly below Decks/Mixer and above Library (djay Pro style)
     if (isFxPanelVisible)
     {
-        fxPanel.setBounds(area.removeFromTop(48).reduced(6, 2));
+        fxPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
     }
-
-    // 3. Lower half: Music Library Browser (~38% of remaining window)
-    int totalRemainingHeight = area.getHeight();
-    int libHeight = juce::jlimit(220, 500, (int)(totalRemainingHeight * 0.38));
-    library.setBounds(area.removeFromBottom(libHeight));
 
     // 4. Center workspace: Deck 1 (left), Center Mixer, Deck 2 (right)
     area.reduce(6, 4);

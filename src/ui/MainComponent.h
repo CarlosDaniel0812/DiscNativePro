@@ -35,7 +35,7 @@ private:
     MixerComponent mixer;
     LibraryComponent library;
 
-    bool isFxPanelVisible { false };
+    bool isFxPanelVisible { true };
     juce::Component::SafePointer<juce::DialogWindow> settingsWindow;
 
     // Automix orchestration state

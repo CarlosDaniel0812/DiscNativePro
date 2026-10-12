@@ -99,6 +99,24 @@ TopBarComponent::~TopBarComponent()
     stopTimer();
 }
 
+void TopBarComponent::setFxActive(bool active)
+{
+    if (active)
+    {
+        fxButton.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
+                                  juce::Colour::fromRGB(56, 189, 248),
+                                  juce::Colour::fromRGB(56, 189, 248),
+                                  juce::Colour::fromRGB(56, 189, 248).withAlpha(0.6f));
+    }
+    else
+    {
+        fxButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                                  juce::Colour::fromRGB(96, 165, 250),
+                                  juce::Colour::fromRGB(96, 165, 250),
+                                  juce::Colour::fromRGB(45, 50, 65));
+    }
+}
+
 void TopBarComponent::setRecordingState(bool recording, double elapsedSeconds)
 {
     isRecording = recording;

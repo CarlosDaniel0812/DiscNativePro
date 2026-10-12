@@ -1,112 +1,123 @@
 #include "FxPanelComponent.h"
 
 FxPanelComponent::FxPanelComponent(DjMixer& djMixer)
-    : mixer(djMixer)
+    : slot1_1(djMixer.getFxChain(0).getSlot(0)),
+      slot1_2(djMixer.getFxChain(0).getSlot(1)),
+      slot1_3(djMixer.getFxChain(0).getSlot(2)),
+      slot2_1(djMixer.getFxChain(1).getSlot(0)),
+      slot2_2(djMixer.getFxChain(1).getSlot(1)),
+      slot2_3(djMixer.getFxChain(1).getSlot(2))
 {
-    // ECHO Section
-    echoToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(24, 28, 36));
-    echoToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(96, 165, 250));
-    echoToggleBtn.setClickingTogglesState(true);
-    echoToggleBtn.onClick = [this]() {
-        bool on = echoToggleBtn.getToggleState();
-        mixer.setFxEnabled(on);
-        echoToggleBtn.setColour(juce::TextButton::buttonColourId, on ? juce::Colour::fromRGB(37, 99, 235) : juce::Colour::fromRGB(24, 28, 36));
-        echoToggleBtn.setColour(juce::TextButton::textColourOffId, on ? juce::Colours::white : juce::Colour::fromRGB(96, 165, 250));
+    // 1. Deck 1 FX slots
+    addAndMakeVisible(slot1_1);
+    addAndMakeVisible(slot1_2);
+    addAndMakeVisible(slot1_3);
+
+    // 2. Center FX Mode Controls
+    fxTitleLabel.setText("FX", juce::dontSendNotification);
+    fxTitleLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    fxTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
+    fxTitleLabel.setJustificationType(juce::Justification::centred);
+    addAndMakeVisible(fxTitleLabel);
+
+    manualBtn.setText("MANUAL");
+    manualBtn.setFontSize(8.5f);
+    manualBtn.setCornerRadius(3.0f);
+    manualBtn.onClick = [this]() {
+        isInstantMode = false;
+        updateModeButtons();
     };
-    addAndMakeVisible(echoToggleBtn);
+    addAndMakeVisible(manualBtn);
 
-    auto setupBeatBtn = [this](juce::TextButton& btn, float timeSec) {
-        btn.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(20, 23, 30));
-        btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(142, 149, 165));
-        btn.onClick = [this, timeSec, &btn]() {
-            mixer.setFxDelayTime(timeSec);
-            beat1_4Btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(142, 149, 165));
-            beat1_2Btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(142, 149, 165));
-            beat3_4Btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(142, 149, 165));
-            beat1_1Btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(142, 149, 165));
-            btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(96, 165, 250));
-        };
-        addAndMakeVisible(btn);
+    instantBtn.setText("INSTANT");
+    instantBtn.setFontSize(8.5f);
+    instantBtn.setCornerRadius(3.0f);
+    instantBtn.onClick = [this]() {
+        isInstantMode = true;
+        updateModeButtons();
     };
+    addAndMakeVisible(instantBtn);
 
-    setupBeatBtn(beat1_4Btn, 0.125f);
-    setupBeatBtn(beat1_2Btn, 0.250f);
-    setupBeatBtn(beat3_4Btn, 0.375f);
-    setupBeatBtn(beat1_1Btn, 0.500f);
-    beat1_2Btn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(96, 165, 250)); // default
+    updateModeButtons();
 
-    echoFeedbackKnob.setRange(0.0, 0.85, 0.01);
-    echoFeedbackKnob.setValue(0.35);
-    echoFeedbackKnob.onValueChange = [this]() { mixer.setFxFeedback((float)echoFeedbackKnob.getValue()); };
-    addAndMakeVisible(echoFeedbackKnob);
-
-    echoMixKnob.setRange(0.0, 1.0, 0.01);
-    echoMixKnob.setValue(0.30);
-    echoMixKnob.onValueChange = [this]() { mixer.setFxMix((float)echoMixKnob.getValue()); };
-    addAndMakeVisible(echoMixKnob);
-
-    // REVERB Section
-    reverbToggleBtn.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(24, 28, 36));
-    reverbToggleBtn.setColour(juce::TextButton::textColourOffId, juce::Colour::fromRGB(255, 159, 28));
-    reverbToggleBtn.setClickingTogglesState(true);
-    reverbToggleBtn.onClick = [this]() {
-        bool on = reverbToggleBtn.getToggleState();
-        mixer.setReverbEnabled(on);
-        reverbToggleBtn.setColour(juce::TextButton::buttonColourId, on ? juce::Colour::fromRGB(217, 119, 6) : juce::Colour::fromRGB(24, 28, 36));
-        reverbToggleBtn.setColour(juce::TextButton::textColourOffId, on ? juce::Colours::white : juce::Colour::fromRGB(255, 159, 28));
-    };
-    addAndMakeVisible(reverbToggleBtn);
-
-    reverbMixKnob.setRange(0.0, 1.0, 0.01);
-    reverbMixKnob.setValue(0.25);
-    reverbMixKnob.onValueChange = [this]() { mixer.setReverbMix((float)reverbMixKnob.getValue()); };
-    addAndMakeVisible(reverbMixKnob);
-}
-
-FxPanelComponent::~FxPanelComponent()
-{
+    // 3. Deck 2 FX slots
+    addAndMakeVisible(slot2_1);
+    addAndMakeVisible(slot2_2);
+    addAndMakeVisible(slot2_3);
 }
 
 void FxPanelComponent::paint(juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
 
-    // Dark sleek FX bar #121419 with border #232733
-    g.setColour(juce::Colour::fromRGB(18, 20, 25));
-    g.fillRoundedRectangle(bounds.reduced(4.0f, 2.0f), 6.0f);
+    // Outer container background
+    g.setColour(juce::Colour::fromRGB(12, 14, 19));
+    g.fillRoundedRectangle(bounds, 6.0f);
 
-    g.setColour(juce::Colour::fromRGB(35, 39, 51));
-    g.drawRoundedRectangle(bounds.reduced(4.0f, 2.0f), 6.0f, 1.0f);
-
-    // Section dividers
-    g.setColour(juce::Colour::fromRGB(32, 36, 46));
-    g.drawVerticalLine(340, 6.0f, (float)getHeight() - 6.0f);
+    // Outline
+    g.setColour(juce::Colour::fromRGB(26, 30, 42));
+    g.drawRoundedRectangle(bounds, 6.0f, 1.0f);
 }
 
 void FxPanelComponent::resized()
 {
-    auto area = getLocalBounds().reduced(8, 3);
+    auto area = getLocalBounds().reduced(5, 3);
 
-    // Delay section (left)
-    echoToggleBtn.setBounds(area.removeFromLeft(64).reduced(0, 4));
-    area.removeFromLeft(8);
+    int centerWidth = 84;
+    int deckAreaWidth = (area.getWidth() - centerWidth - 12) / 2;
 
-    beat1_4Btn.setBounds(area.removeFromLeft(30).reduced(0, 7));
-    area.removeFromLeft(2);
-    beat1_2Btn.setBounds(area.removeFromLeft(30).reduced(0, 7));
-    area.removeFromLeft(2);
-    beat3_4Btn.setBounds(area.removeFromLeft(30).reduced(0, 7));
-    area.removeFromLeft(2);
-    beat1_1Btn.setBounds(area.removeFromLeft(30).reduced(0, 7));
-    area.removeFromLeft(12);
+    // Deck 1 Area (Left)
+    auto leftArea = area.removeFromLeft(deckAreaWidth);
+    int slotWidth1 = (leftArea.getWidth() - 8) / 3;
 
-    echoFeedbackKnob.setBounds(area.removeFromLeft(48).reduced(0, 1));
-    area.removeFromLeft(4);
-    echoMixKnob.setBounds(area.removeFromLeft(48).reduced(0, 1));
+    slot1_1.setBounds(leftArea.removeFromLeft(slotWidth1));
+    leftArea.removeFromLeft(4);
+    slot1_2.setBounds(leftArea.removeFromLeft(slotWidth1));
+    leftArea.removeFromLeft(4);
+    slot1_3.setBounds(leftArea);
 
-    // Move to Reverb section (right of divider)
-    area.removeFromLeft(24);
-    reverbToggleBtn.setBounds(area.removeFromLeft(74).reduced(0, 4));
-    area.removeFromLeft(8);
-    reverbMixKnob.setBounds(area.removeFromLeft(48).reduced(0, 1));
+    // Deck 2 Area (Right)
+    auto rightArea = area.removeFromRight(deckAreaWidth);
+    int slotWidth2 = (rightArea.getWidth() - 8) / 3;
+
+    slot2_1.setBounds(rightArea.removeFromLeft(slotWidth2));
+    rightArea.removeFromLeft(4);
+    slot2_2.setBounds(rightArea.removeFromLeft(slotWidth2));
+    rightArea.removeFromLeft(4);
+    slot2_3.setBounds(rightArea);
+
+    // Center Group
+    area.reduce(2, 0);
+    auto titleArea = area.removeFromTop(20);
+    fxTitleLabel.setBounds(titleArea);
+
+    auto modeArea = area.removeFromTop(18).reduced(2, 0);
+    manualBtn.setBounds(modeArea.removeFromLeft(modeArea.getWidth() / 2 - 1));
+    instantBtn.setBounds(modeArea.removeFromRight(modeArea.getWidth()));
+}
+
+void FxPanelComponent::updateModeButtons()
+{
+    if (!isInstantMode)
+    {
+        manualBtn.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
+                                  juce::Colour::fromRGB(56, 189, 248),
+                                  juce::Colours::transparentBlack,
+                                  juce::Colour::fromRGB(56, 189, 248).withAlpha(0.5f));
+        instantBtn.setCustomColours(juce::Colour::fromRGB(18, 20, 28),
+                                   juce::Colour::fromRGB(100, 116, 139),
+                                   juce::Colours::transparentBlack,
+                                   juce::Colours::transparentBlack);
+    }
+    else
+    {
+        manualBtn.setCustomColours(juce::Colour::fromRGB(18, 20, 28),
+                                   juce::Colour::fromRGB(100, 116, 139),
+                                   juce::Colours::transparentBlack,
+                                   juce::Colours::transparentBlack);
+        instantBtn.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
+                                   juce::Colour::fromRGB(56, 189, 248),
+                                   juce::Colours::transparentBlack,
+                                   juce::Colour::fromRGB(56, 189, 248).withAlpha(0.5f));
+    }
 }

@@ -69,12 +69,13 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
         addAndMakeVisible(btn);
     };
     setupRailIcon(railIcon1, LucideIcons::IconType::Music, juce::Colour::fromRGB(0, 229, 255), true); // Active music
-    setupRailIcon(railIcon2, LucideIcons::IconType::Layers, juce::Colour::fromRGB(244, 63, 94), false); // Coral / Playlists
+    setupRailIcon(railIcon2, LucideIcons::IconType::Sparkles, juce::Colour::fromRGB(192, 132, 252), false); // AI Smart Match
     setupRailIcon(railIcon3, LucideIcons::IconType::Disc, juce::Colour::fromRGB(46, 196, 182), false); // Vinyl
     setupRailIcon(railIcon4, LucideIcons::IconType::Tv, juce::Colour::fromRGB(148, 163, 184), false); // TV
     setupRailIcon(railIcon5, LucideIcons::IconType::MoreHorizontal, juce::Colour::fromRGB(148, 163, 184), false); // ...
 
     railIcon1.onClick = [this]() { setLibraryMode(LibraryMode::Local); };
+    railIcon2.onClick = [this]() { setLibraryMode(LibraryMode::AIMatch); };
     railIcon4.onClick = [this]() { setLibraryMode(LibraryMode::YouTube); };
 
     // YouTube View
@@ -83,7 +84,26 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
         if (onLoadYouTubeTrack)
             onLoadYouTubeTrack(deckIndex, video);
     };
+    youtubeView->onOpenSettings = [this]() {
+        if (onOpenSettings) onOpenSettings();
+    };
     addChildComponent(*youtubeView);
+
+    // AI Match View
+    aiMatchView = std::make_unique<AIMatchView>();
+    aiMatchView->onLoadLocalTrack = [this](const juce::File& file, int targetDeck) {
+        if (onLoadTrack)
+            onLoadTrack(targetDeck, file);
+    };
+    aiMatchView->onSearchYouTube = [this](const juce::String& query, int /*targetDeck*/) {
+        setLibraryMode(LibraryMode::YouTube);
+        if (youtubeView)
+            youtubeView->performSearch(query);
+    };
+    aiMatchView->onOpenSettings = [this]() {
+        if (onOpenSettings) onOpenSettings();
+    };
+    addChildComponent(*aiMatchView);
 
     // 2. "Mis Archivos" Hierarchical Folder Tree
     folderTree.onSelectFolder = [this](const juce::String& folderPath) {
@@ -369,26 +389,34 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
 void LibraryComponent::setLibraryMode(LibraryMode mode)
 {
     currentMode = mode;
-    bool isYt = (currentMode == LibraryMode::YouTube);
+    bool isLocal = (currentMode == LibraryMode::Local);
+    bool isYt    = (currentMode == LibraryMode::YouTube);
+    bool isAi    = (currentMode == LibraryMode::AIMatch);
 
-    railIcon1.setCustomColours(!isYt ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
+    railIcon1.setCustomColours(isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
                               juce::Colour::fromRGB(0, 229, 255),
                               juce::Colour::fromRGB(0, 229, 255),
-                              !isYt ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+                              isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+
+    railIcon2.setCustomColours(isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.25f) : juce::Colour::fromRGB(18, 20, 26),
+                              isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
+                              isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
+                              isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+
     railIcon4.setCustomColours(isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
                               isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
                               isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
                               isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
 
-    folderTree.setVisible(!isYt);
-    tableHeaderTitle.setVisible(!isYt);
-    searchBox.setVisible(!isYt);
-    addBtn.setVisible(!isYt);
-    table.setVisible(!isYt);
-    automixHeader.setVisible(!isYt);
-    startAutomixBtn.setVisible(!isYt);
-    clearQueueBtn.setVisible(!isYt && !automixQueue.empty());
-    queueTitle.setVisible(!isYt);
+    folderTree.setVisible(isLocal);
+    tableHeaderTitle.setVisible(isLocal);
+    searchBox.setVisible(isLocal);
+    addBtn.setVisible(isLocal);
+    table.setVisible(isLocal);
+    automixHeader.setVisible(isLocal);
+    startAutomixBtn.setVisible(isLocal);
+    clearQueueBtn.setVisible(isLocal && !automixQueue.empty());
+    queueTitle.setVisible(isLocal);
 
     if (youtubeView != nullptr)
     {
@@ -397,8 +425,28 @@ void LibraryComponent::setLibraryMode(LibraryMode mode)
             youtubeView->updateApiStatus();
     }
 
+    if (aiMatchView != nullptr)
+    {
+        aiMatchView->setVisible(isAi);
+        if (isAi)
+        {
+            std::vector<juce::File> files;
+            for (const auto& t : allTracks)
+                files.push_back(t.file);
+            aiMatchView->setLocalLibraryFiles(files);
+        }
+    }
+
     resized();
     repaint();
+}
+
+void LibraryComponent::updateActiveTrackContext(const CurrentTrackContext& ctx)
+{
+    if (aiMatchView != nullptr)
+    {
+        aiMatchView->updateActiveTrack(ctx);
+    }
 }
 
 void LibraryComponent::filterTracks(const juce::String& query)
@@ -654,7 +702,7 @@ void LibraryComponent::paint(juce::Graphics& g)
     // Panel vertical dividers
     g.drawVerticalLine(42, 0.0f, bounds.getHeight());  // after icon rail
 
-    if (currentMode == LibraryMode::YouTube)
+    if (currentMode == LibraryMode::YouTube || currentMode == LibraryMode::AIMatch)
     {
         return;
     }
@@ -778,6 +826,13 @@ void LibraryComponent::resized()
     {
         if (youtubeView != nullptr)
             youtubeView->setBounds(area);
+        return;
+    }
+
+    if (currentMode == LibraryMode::AIMatch)
+    {
+        if (aiMatchView != nullptr)
+            aiMatchView->setBounds(area);
         return;
     }
 

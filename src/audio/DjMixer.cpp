@@ -152,6 +152,8 @@ void DjMixer::prepare(double sampleRate, int blockSize)
     currentSampleRate = sampleRate;
     ch1.prepare(sampleRate, blockSize);
     ch2.prepare(sampleRate, blockSize);
+    fxChain1.prepare(sampleRate, blockSize);
+    fxChain2.prepare(sampleRate, blockSize);
 
     delayBufferL.assign(maxDelaySamples, 0.0f);
     delayBufferR.assign(maxDelaySamples, 0.0f);
@@ -164,6 +166,8 @@ void DjMixer::reset()
 {
     ch1.reset();
     ch2.reset();
+    fxChain1.reset();
+    fxChain2.reset();
     masterPeakLeft.store(0.0f);
     masterPeakRight.store(0.0f);
     cuePeakLeft.store(0.0f);
@@ -196,6 +200,10 @@ void DjMixer::process(juce::AudioBuffer<float>& deck1Buffer,
     // Process individual channel strips (accumulates into cueOutBuffer if PFL CUE is active)
     ch1.process(deck1Buffer, cueOutBuffer, numSamples, currentSampleRate);
     ch2.process(deck2Buffer, cueOutBuffer, numSamples, currentSampleRate);
+
+    // Process Deck multi-FX chains before crossfader
+    fxChain1.process(deck1Buffer, numSamples, deck1Bpm.load());
+    fxChain2.process(deck2Buffer, numSamples, deck2Bpm.load());
 
     // Crossfader calculation: constant power curve
     float xf = crossfader.load(); // -1.0 to 1.0

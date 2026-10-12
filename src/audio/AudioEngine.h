@@ -36,6 +36,10 @@ public:
     bool toggleRecording(juce::String& outFilePath);
     bool isRecording() const { return audioRecorder.isRecording(); }
     double getRecordingDuration() const { return audioRecorder.getRecordingDurationSeconds(); }
+    juce::File getRecordingDirectory() const;
+    void setRecordingDirectory(const juce::File& dir);
+    juce::File getDefaultRecordingDirectory() const;
+    static juce::File getSettingsFile();
 
     // Tempo Blend & Crossfader
     void setTempoBlend(bool active);
@@ -88,6 +92,7 @@ private:
     std::atomic<float> currentCrossfaderVal { 0.0f };
     enum class CrossfaderZone { Deck1, Center, Deck2 };
     CrossfaderZone lastCrossfaderZone { CrossfaderZone::Center };
+    mutable juce::File customRecordDir;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

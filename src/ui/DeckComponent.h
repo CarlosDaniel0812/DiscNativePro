@@ -47,6 +47,10 @@ public:
 
     double getOriginalBpm() const { return deck.getOriginalBpm(); }
     double getBpm() const { return deck.getBpm(); }
+    juce::String getTrackTitle() const { return titleLabel.getText(); }
+    juce::String getTrackArtist() const { return artistLabel.getText(); }
+    juce::String getTrackKey() const { return keyBadge.getText(); }
+    bool isLoaded() const { return deck.isLoaded() || isVideoMode; }
 
     std::function<void(const juce::File& file, double detectedBpm)> onFileLoaded;
 

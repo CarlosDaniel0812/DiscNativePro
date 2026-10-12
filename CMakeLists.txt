@@ -37,6 +37,8 @@ target_sources(DiscNativePro
         src/audio/DjMixer.cpp
         src/audio/BeatDetector.h
         src/audio/BeatDetector.cpp
+        src/audio/DeckFxChain.h
+        src/audio/DeckFxChain.cpp
         src/audio/AudioEngine.h
         src/audio/AudioEngine.cpp
         src/audio/AudioRecorder.h
@@ -49,6 +51,8 @@ target_sources(DiscNativePro
         src/services/YouTubeService.cpp
         src/services/ThumbnailCache.h
         src/services/ThumbnailCache.cpp
+        src/services/AIService.h
+        src/services/AIService.cpp
         src/ui/TopBarComponent.h
         src/ui/TopBarComponent.cpp
         src/ui/DjKnob.h
@@ -74,12 +78,16 @@ target_sources(DiscNativePro
         src/ui/LibraryComponent.cpp
         src/ui/YouTubeLibraryView.h
         src/ui/YouTubeLibraryView.cpp
+        src/ui/AIMatchView.h
+        src/ui/AIMatchView.cpp
         src/ui/FolderTreeComponent.h
         src/ui/FolderTreeComponent.cpp
         src/ui/MidiModalComponent.h
         src/ui/MidiModalComponent.cpp
         src/ui/SettingsModalComponent.h
         src/ui/SettingsModalComponent.cpp
+        src/ui/FxSlotComponent.h
+        src/ui/FxSlotComponent.cpp
         src/ui/FxPanelComponent.h
         src/ui/FxPanelComponent.cpp
         src/ui/MainComponent.h
@@ -127,11 +135,16 @@ if(APPLE)
             "-framework Cocoa"
     )
 elseif(WIN32)
-    list(APPEND CMAKE_MODULE_PATH
-        "${juce_SOURCE_DIR}/extras/Build/CMake"
-        "${JUCE_SOURCE_DIR}/extras/Build/CMake"
+    # Descargar automáticamente el SDK oficial de Microsoft.Web.WebView2
+    include(FetchContent)
+    FetchContent_Declare(
+        microsoft_webview2
+        URL "https://globalcdn.nuget.org/packages/microsoft.web.webview2.1.0.1901.177.nupkg"
+        DOWNLOAD_NAME "microsoft.web.webview2.zip"
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
-    find_package(WebView2 QUIET)
+    FetchContent_MakeAvailable(microsoft_webview2)
+
     target_sources(DiscNativePro
         PRIVATE
             src/ui/YouTubeVideoComponent_win.cpp
@@ -140,28 +153,34 @@ elseif(WIN32)
         PRIVATE
             JUCE_WEB_BROWSER=1
             JUCE_USE_WIN_WEBVIEW2=1
+            JUCE_USE_WIN_WEBVIEW2_WITH_STATIC_LINKING=1
             JUCE_USE_CURL=0
     )
+
+    if(${CMAKE_SYSTEM_PROCESSOR} STREQUAL "arm64")
+        set(WV2_ARCH "arm64")
+    elseif(CMAKE_SIZEOF_VOID_P EQUAL 4)
+        set(WV2_ARCH "x86")
+    else()
+        set(WV2_ARCH "x64")
+    endif()
+
+    target_include_directories(DiscNativePro
+        PRIVATE
+            "${microsoft_webview2_SOURCE_DIR}/build/native/include"
+    )
+
     target_link_libraries(DiscNativePro
         PRIVATE
             psapi
+            "${microsoft_webview2_SOURCE_DIR}/build/native/${WV2_ARCH}/WebView2LoaderStatic.lib"
     )
-    if(TARGET juce::juce_webview2)
-        target_link_libraries(DiscNativePro PRIVATE juce::juce_webview2)
-    endif()
 
-    # Fallback directo en carpeta packages
-    file(GLOB_RECURSE WEBVIEW2_HEADERS "${CMAKE_CURRENT_SOURCE_DIR}/packages/*/WebView2.h")
-    if(WEBVIEW2_HEADERS)
-        list(GET WEBVIEW2_HEADERS 0 FIRST_WV2_HEADER)
-        get_filename_component(WV2_INC_DIR "${FIRST_WV2_HEADER}" DIRECTORY)
-        target_include_directories(DiscNativePro PRIVATE "${WV2_INC_DIR}")
-    endif()
-    file(GLOB_RECURSE WV2_LIBS "${CMAKE_CURRENT_SOURCE_DIR}/packages/*/x64/WebView2LoaderStatic.lib")
-    if(WV2_LIBS)
-        list(GET WV2_LIBS 0 FIRST_WV2_LIB)
-        target_link_libraries(DiscNativePro PRIVATE "${FIRST_WV2_LIB}")
-    endif()
+    add_custom_command(TARGET DiscNativePro POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${microsoft_webview2_SOURCE_DIR}/runtimes/win-${WV2_ARCH}/native/WebView2Loader.dll"
+            "$<TARGET_FILE_DIR:DiscNativePro>/WebView2Loader.dll"
+    )
 elseif(UNIX AND NOT APPLE)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(GTK3 REQUIRED IMPORTED_TARGET gtk+-3.0)

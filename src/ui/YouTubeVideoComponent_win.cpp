@@ -43,25 +43,25 @@ struct YouTubeVideoComponent::Pimpl
     {
         if (!browser) return;
         int vol = (int)(juce::jlimit(0.0f, 1.0f, volume0to1) * 100.0f);
-        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"setVolume\",\"args\":[" + juce::String(vol) + "]}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var msg = '{\"event\":\"command\",\"func\":\"setVolume\",\"args\":[" + juce::String(vol) + "]}'; window.postMessage(msg, '*'); var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage(msg, '*'); } catch(e){}");
     }
 
     void play()
     {
         if (!browser) return;
-        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var msg = '{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}'; window.postMessage(msg, '*'); var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage(msg, '*'); } catch(e){}");
     }
 
     void pause()
     {
         if (!browser) return;
-        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var msg = '{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}'; window.postMessage(msg, '*'); var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage(msg, '*'); } catch(e){}");
     }
 
     void seek(double seconds)
     {
         if (!browser) return;
-        browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"seekTo\",\"args\":[" + juce::String(seconds) + ", true]}', '*'); } catch(e){}");
+        browser->evaluateJavascript("try { var msg = '{\"event\":\"command\",\"func\":\"seekTo\",\"args\":[" + juce::String(seconds) + ", true]}'; window.postMessage(msg, '*'); var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage(msg, '*'); } catch(e){}");
     }
 };
 

@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
+#include "DeckFxChain.h"
 #include <atomic>
 #include <vector>
 
@@ -98,10 +99,24 @@ public:
     void setReverbMix(float mix)           { reverbMix.store(juce::jlimit(0.0f, 1.0f, mix)); }
     float getReverbMix() const             { return reverbMix.load(); }
 
+    // Multi-FX Deck Chains
+    DeckFxChain& getFxChain(int deckIndex) { return deckIndex == 0 ? fxChain1 : fxChain2; }
+    const DeckFxChain& getFxChain(int deckIndex) const { return deckIndex == 0 ? fxChain1 : fxChain2; }
+    void setDeckBpm(int deckIndex, float bpm)
+    {
+        if (deckIndex == 0) deck1Bpm.store(bpm);
+        else if (deckIndex == 1) deck2Bpm.store(bpm);
+    }
+
 private:
     double currentSampleRate { 44100.0 };
     ChannelStrip ch1;
     ChannelStrip ch2;
+
+    DeckFxChain fxChain1;
+    DeckFxChain fxChain2;
+    std::atomic<float> deck1Bpm { 120.0f };
+    std::atomic<float> deck2Bpm { 120.0f };
 
     std::atomic<float> crossfader { 0.0f };    // -1.0 = Deck 1 full, 0.0 = Center, +1.0 = Deck 2 full
     std::atomic<float> masterVolume { 1.0f };

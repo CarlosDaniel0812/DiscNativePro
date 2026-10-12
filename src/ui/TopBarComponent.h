@@ -17,6 +17,7 @@ public:
 
     void setRecordingState(bool recording, double elapsedSeconds = 0.0);
     bool isRecordingActive() const { return isRecording; }
+    void setFxActive(bool active);
 
     std::function<void()> onRecClicked;
     std::function<void()> onFxClicked;

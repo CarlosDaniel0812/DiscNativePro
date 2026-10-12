@@ -124,7 +124,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* /*inputCh
     juce::AudioSourceChannelInfo d2Info(&deck2Buffer, 0, numSamples);
     deck2.getNextAudioBlock(d2Info);
 
-    // 2. Process DSP: Channel EQ, Color Filters, Channel Faders, Crossfader, Master Gain, Cue Preescucha & Meters
+    // 2. Process DSP: Channel EQ, Color Filters, Deck FX Chains, Channel Faders, Crossfader, Master Gain, Cue Preescucha & Meters
+    djMixer.setDeckBpm(0, static_cast<float>(deck1.getBpm()));
+    djMixer.setDeckBpm(1, static_cast<float>(deck2.getBpm()));
     djMixer.process(deck1Buffer, deck2Buffer, masterBuffer, cueBuffer, numSamples);
 
     // 3. Push to master recorder (lock-free, zero allocation)

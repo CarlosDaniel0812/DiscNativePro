@@ -5,6 +5,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include "../audio/AudioEngine.h"
 #include "../midi/MidiManager.h"
+#include "../services/AIService.h"
 #include "LucideIcons.h"
 #include "DjButton.h"
 
@@ -25,13 +26,14 @@ private:
     void setupSoundTab();
     void setupMidiTab();
     void setupStreamingTab();
+    void setupAITab();
     void refreshMidiDevices();
     void updateTabVisibility();
     void applySettings();
 
     AudioEngine& audioEngine;
     MidiManager& midi;
-    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming
+    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA
 
     // Header controls
     juce::TextButton closeDotButton;
@@ -44,6 +46,7 @@ private:
     DjButton tabMidiBtn;
     DjButton tabShortcutsBtn;
     DjButton tabStreamingBtn;
+    DjButton tabAIBtn;
 
     // --- Tab 0: General Controls ---
     juce::Label generalSectionDeck;
@@ -114,6 +117,18 @@ private:
     juce::Label apiStatusBadge;
     juce::Label apiInfoCard;
     DjButton clearApiKeyBtn;
+
+    // --- Tab 6: Inteligencia Artificial (AI Match) Controls ---
+    juce::Label aiSectionTitle;
+    juce::Label aiDescLabel;
+    juce::ToggleButton aiEnabledToggle;
+    juce::Label aiProviderLabel;
+    juce::ComboBox aiProviderCombo;
+    juce::Label aiApiKeyLabel;
+    juce::TextEditor aiApiKeyEditor;
+    juce::Label aiStatusBadge;
+    juce::Label aiInfoCard;
+    DjButton clearAiApiKeyBtn;
 
     // --- Footer Controls ---
     DjButton helpButton;
