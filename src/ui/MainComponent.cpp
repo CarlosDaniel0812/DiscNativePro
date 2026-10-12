@@ -34,7 +34,8 @@ MainComponent::MainComponent()
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon,
                     "Grabacion Guardada",
-                    "Sesion de mezcla guardada con exito en:\n\n" + outPath);
+                    "Sesion de mezcla guardada con exito en:\n\n" + outPath
+                    + "\n\nPuedes abrir la carpeta desde Preferencias > General.");
             }
         }
     };
@@ -287,6 +288,14 @@ void MainComponent::timerCallback()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    // Recording toggle shortcut: Cmd+R (macOS) / Ctrl+R (Windows/Linux)
+    if (key.getModifiers().isCommandDown() && (key.getKeyCode() == 'r' || key.getKeyCode() == 'R'))
+    {
+        if (topBar.onRecClicked)
+            topBar.onRecClicked();
+        return true;
+    }
+
     auto text = key.getTextDescription().toLowerCase();
     char c = (text.length() == 1) ? static_cast<char>(text[0]) : '\0';
 

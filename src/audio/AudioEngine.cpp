@@ -49,6 +49,66 @@ void AudioEngine::shutdown()
     diskReaderThread.stopThread(2000);
 }
 
+juce::File AudioEngine::getSettingsFile()
+{
+    auto appData = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                       .getChildFile("DiscNativePro");
+    if (!appData.exists())
+        appData.createDirectory();
+    return appData.getChildFile("settings.json");
+}
+
+juce::File AudioEngine::getDefaultRecordingDirectory() const
+{
+    return juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("DiscPro_Recordings");
+}
+
+juce::File AudioEngine::getRecordingDirectory() const
+{
+    if (customRecordDir.isDirectory())
+        return customRecordDir;
+
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject() && json.hasProperty("recordingDirectory"))
+        {
+            auto path = json["recordingDirectory"].toString().trim();
+            if (path.isNotEmpty())
+            {
+                juce::File dir(path);
+                if (dir.isDirectory() || dir.exists())
+                {
+                    customRecordDir = dir;
+                    return customRecordDir;
+                }
+            }
+        }
+    }
+    return getDefaultRecordingDirectory();
+}
+
+void AudioEngine::setRecordingDirectory(const juce::File& dir)
+{
+    customRecordDir = dir;
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+    {
+        if (dir == getDefaultRecordingDirectory() || !dir.exists())
+            obj->removeProperty("recordingDirectory");
+        else
+            obj->setProperty("recordingDirectory", dir.getFullPathName());
+    }
+    file.replaceWithText(juce::JSON::toString(json));
+}
+
 bool AudioEngine::toggleRecording(juce::String& outFilePath)
 {
     if (audioRecorder.isRecording())
@@ -58,8 +118,9 @@ bool AudioEngine::toggleRecording(juce::String& outFilePath)
         return false; // Stopped
     }
 
-    auto recDir = juce::File::getSpecialLocation(juce::File::userMusicDirectory).getChildFile("DiscPro_Recordings");
-    recDir.createDirectory();
+    auto recDir = getRecordingDirectory();
+    if (!recDir.exists())
+        recDir.createDirectory();
 
     auto timestamp = juce::Time::getCurrentTime().formatted("%Y-%m-%d_%H%M%S");
     auto recFile = recDir.getChildFile("DiscPro_Mix_" + timestamp + ".wav");

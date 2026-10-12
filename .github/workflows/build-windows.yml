@@ -41,6 +41,12 @@ jobs:
           }
           Write-Host "Found executable at: $exePath"
           Copy-Item $exePath -Destination "dist\DiscNativePro.exe"
+          $exeDir = Split-Path -Parent $exePath
+          $dllPath = Get-ChildItem -Path $exeDir -Filter "WebView2Loader.dll" | Select-Object -First 1 -ExpandProperty FullName
+          if ($dllPath) {
+            Write-Host "Found WebView2Loader.dll at: $dllPath"
+            Copy-Item $dllPath -Destination "dist\WebView2Loader.dll"
+          }
           Compress-Archive -Path "dist\*" -DestinationPath "DiscNativePro-Windows-x64.zip" -Force
           Write-Host "Package created: DiscNativePro-Windows-x64.zip"
 

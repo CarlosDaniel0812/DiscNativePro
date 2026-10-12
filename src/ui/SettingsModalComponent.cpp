@@ -155,11 +155,92 @@ void SettingsModalComponent::setupGeneralTab()
     waveformColorCombo.setSelectedId(1, juce::dontSendNotification);
     addChildComponent(waveformColorCombo);
 
+    // Section 3: Grabación de Sesiones
+    recSectionLabel.setText(juce::String::fromUTF8("Grabación de Sesiones"), juce::dontSendNotification);
+    recSectionLabel.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    recSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
+    addChildComponent(recSectionLabel);
+
+    recFolderDescLabel.setText(juce::String::fromUTF8("Carpeta de destino para archivos grabados (.wav 24-bit):"), juce::dontSendNotification);
+    recFolderDescLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    recFolderDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
+    addChildComponent(recFolderDescLabel);
+
+    recFolderEditor.setReadOnly(true);
+    recFolderEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
+    recFolderEditor.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(220, 225, 235));
+    recFolderEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(38, 43, 58));
+    recFolderEditor.setFont(juce::FontOptions("Menlo", 10.5f, juce::Font::plain));
+    addChildComponent(recFolderEditor);
+
+    recBrowseBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
+    recBrowseBtn.setText(juce::String::fromUTF8("Examinar..."));
+    recBrowseBtn.setFontSize(10.5f);
+    recBrowseBtn.setCornerRadius(5.0f);
+    recBrowseBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                                 juce::Colour::fromRGB(200, 205, 220),
+                                 juce::Colour::fromRGB(0, 180, 216),
+                                 juce::Colour::fromRGB(45, 50, 68));
+    recBrowseBtn.onClick = [this]() {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            juce::String::fromUTF8("Seleccionar Carpeta para Grabaciones"),
+            audioEngine.getRecordingDirectory(),
+            "");
+        auto folderFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;
+        fileChooser->launchAsync(folderFlags, [this](const juce::FileChooser& fc) {
+            auto result = fc.getResult();
+            if (result.isDirectory())
+            {
+                audioEngine.setRecordingDirectory(result);
+                updateRecordingFolderUI();
+            }
+        });
+    };
+    addChildComponent(recBrowseBtn);
+
+    recOpenBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
+    recOpenBtn.setText(juce::String::fromUTF8("Abrir Carpeta"));
+    recOpenBtn.setFontSize(10.5f);
+    recOpenBtn.setCornerRadius(5.0f);
+    recOpenBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                               juce::Colour::fromRGB(200, 205, 220),
+                               juce::Colour::fromRGB(74, 222, 128),
+                               juce::Colour::fromRGB(45, 50, 68));
+    recOpenBtn.onClick = [this]() {
+        auto dir = audioEngine.getRecordingDirectory();
+        if (!dir.exists())
+            dir.createDirectory();
+        dir.revealToUser();
+    };
+    addChildComponent(recOpenBtn);
+
+    recResetBtn.setText(juce::String::fromUTF8("Por defecto"));
+    recResetBtn.setFontSize(10.5f);
+    recResetBtn.setCornerRadius(5.0f);
+    recResetBtn.setCustomColours(juce::Colour::fromRGB(26, 28, 36),
+                                juce::Colour::fromRGB(140, 145, 160),
+                                juce::Colour::fromRGB(200, 205, 220),
+                                juce::Colour::fromRGB(40, 44, 58));
+    recResetBtn.onClick = [this]() {
+        audioEngine.setRecordingDirectory(audioEngine.getDefaultRecordingDirectory());
+        updateRecordingFolderUI();
+    };
+    addChildComponent(recResetBtn);
+
+    updateRecordingFolderUI();
+
     appInfoLabel.setText(juce::String::fromUTF8("DiscNativePro DJ Workstation v1.0.0 • Motor C++20 nativo con JUCE 8, CoreAudio y SIMD DSP."),
                          juce::dontSendNotification);
     appInfoLabel.setFont(juce::FontOptions(10.0f, juce::Font::italic));
     appInfoLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(110, 115, 130));
     addChildComponent(appInfoLabel);
+}
+
+void SettingsModalComponent::updateRecordingFolderUI()
+{
+    auto dir = audioEngine.getRecordingDirectory();
+    recFolderEditor.setText(dir.getFullPathName(), juce::dontSendNotification);
+    recFolderEditor.setCaretPosition(recFolderEditor.getText().length());
 }
 
 void SettingsModalComponent::setupDevicesTab()
@@ -525,7 +606,15 @@ void SettingsModalComponent::updateTabVisibility()
     waveformFpsCombo.setVisible(isGeneral);
     waveformColorLabel.setVisible(isGeneral);
     waveformColorCombo.setVisible(isGeneral);
+    recSectionLabel.setVisible(isGeneral);
+    recFolderDescLabel.setVisible(isGeneral);
+    recFolderEditor.setVisible(isGeneral);
+    recBrowseBtn.setVisible(isGeneral);
+    recOpenBtn.setVisible(isGeneral);
+    recResetBtn.setVisible(isGeneral);
     appInfoLabel.setVisible(isGeneral);
+    if (isGeneral)
+        updateRecordingFolderUI();
 
     // Devices component (Tab 1)
     bool isDevices = (activeTab == 1);
@@ -814,7 +903,10 @@ void SettingsModalComponent::paint(juce::Graphics& g)
             for (const auto& item : keys)
             {
                 auto row = inner.removeFromTop(22);
-                auto kbdRect = row.removeFromLeft(36).reduced(0, 2);
+                juce::GlyphArrangement ga;
+                ga.addLineOfText(g.getCurrentFont(), item.first, 0.0f, 0.0f);
+                int kbdW = juce::jmax(36, static_cast<int>(ga.getBoundingBox(0, -1, true).getWidth()) + 14);
+                auto kbdRect = row.removeFromLeft(kbdW).reduced(0, 2);
                 g.setColour(juce::Colour::fromRGB(36, 39, 53));
                 g.fillRoundedRectangle(kbdRect.toFloat(), 3.0f);
                 g.setColour(juce::Colours::white);
@@ -842,11 +934,12 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
         contentArea.removeFromTop(12);
 
-        // Mixer Card
-        auto mixerCard = contentArea.removeFromTop(100);
-        drawCard(mixerCard, juce::String::fromUTF8("Mezclador & Crossfader:"), juce::Colours::white, {
-            { "X | C | V", juce::String::fromUTF8("Crossfader: Izquierda | Centro | Derecha") },
-            { "Espacio",   juce::String::fromUTF8("Activar / Desactivar Scratch en Deck activo") }
+        // Mixer & General Card
+        auto mixerCard = contentArea.removeFromTop(122);
+        drawCard(mixerCard, juce::String::fromUTF8("Mezclador & Control Global:"), juce::Colours::white, {
+            { juce::String::fromUTF8("⌘R / Ctrl+R"), juce::String::fromUTF8("Iniciar / Detener Grabación de Sesión (REC)") },
+            { "X | C | V",   juce::String::fromUTF8("Crossfader: Izquierda | Centro | Derecha") },
+            { "Espacio",     juce::String::fromUTF8("Activar / Desactivar Scratch en Deck activo") }
         });
     }
 
@@ -931,7 +1024,24 @@ void SettingsModalComponent::resized()
         auto row4 = gArea.removeFromTop(24);
         waveformColorLabel.setBounds(row4.removeFromLeft(220));
         waveformColorCombo.setBounds(row4);
-        gArea.removeFromTop(18);
+        gArea.removeFromTop(12);
+
+        // Section 3: Grabación de Sesiones
+        recSectionLabel.setBounds(gArea.removeFromTop(20));
+        gArea.removeFromTop(4);
+
+        recFolderDescLabel.setBounds(gArea.removeFromTop(16));
+        gArea.removeFromTop(4);
+
+        auto recRow = gArea.removeFromTop(26);
+        recResetBtn.setBounds(recRow.removeFromRight(82));
+        recRow.removeFromRight(6);
+        recOpenBtn.setBounds(recRow.removeFromRight(102));
+        recRow.removeFromRight(6);
+        recBrowseBtn.setBounds(recRow.removeFromRight(96));
+        recRow.removeFromRight(6);
+        recFolderEditor.setBounds(recRow);
+        gArea.removeFromTop(12);
 
         appInfoLabel.setBounds(gArea.removeFromTop(20));
     }

@@ -30,6 +30,7 @@ private:
     void refreshMidiDevices();
     void updateTabVisibility();
     void applySettings();
+    void updateRecordingFolderUI();
 
     AudioEngine& audioEngine;
     MidiManager& midi;
@@ -62,6 +63,14 @@ private:
     juce::ComboBox waveformFpsCombo;
     juce::Label waveformColorLabel;
     juce::ComboBox waveformColorCombo;
+
+    juce::Label recSectionLabel;
+    juce::Label recFolderDescLabel;
+    juce::TextEditor recFolderEditor;
+    DjButton recBrowseBtn;
+    DjButton recOpenBtn;
+    DjButton recResetBtn;
+    std::unique_ptr<juce::FileChooser> fileChooser;
 
     juce::Label appInfoLabel;
 
