@@ -8,19 +8,23 @@
 #include "DjLookAndFeel.h"
 #include "CoverArtGenerator.h"
 #include "DjButton.h"
+#include "../services/LanguageManager.h"
 
 class DeckComponent : public juce::Component,
                       public juce::FileDragAndDropTarget,
                       public juce::DragAndDropTarget,
-                      public juce::Timer
+                      public juce::Timer,
+                      public LanguageManager::Listener
 {
 public:
     DeckComponent(int deckNumber, DeckPlayer& player, juce::Colour accentColour);
     ~DeckComponent() override;
 
     void paint(juce::Graphics& g) override;
+    void paintOverChildren(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
+    void languageChanged() override;
 
     // File drag & drop from macOS Finder
     bool isInterestedInFileDrag(const juce::StringArray& files) override;
@@ -44,12 +48,16 @@ public:
     void togglePlayPause();
     void triggerCue();
     bool isPlaying() const;
+    double getVideoPosition() const { return videoPositionSeconds; }
+    double getVideoDuration() const { return videoDurationSeconds; }
+    void seekVideo(double seconds);
 
     double getOriginalBpm() const { return deck.getOriginalBpm(); }
     double getBpm() const { return deck.getBpm(); }
     juce::String getTrackTitle() const { return titleLabel.getText(); }
     juce::String getTrackArtist() const { return artistLabel.getText(); }
     juce::String getTrackKey() const { return keyBadge.getText(); }
+    juce::String getVideoId() const { return loadedVideoId; }
     bool isLoaded() const { return deck.isLoaded() || isVideoMode; }
 
     std::function<void(const juce::File& file, double detectedBpm)> onFileLoaded;
@@ -57,6 +65,10 @@ public:
 private:
     void updateLabels();
     void formatTime(double seconds, char* buffer, size_t bufferSize);
+    // Resuelve título/autor reales cuando solo tenemos el ID (drag yt:ID).
+    // No bloquea: carga inmediata + actualización async si el video sigue cargado.
+    void resolveVideoMetadataAsync(const juce::String& videoId);
+    static bool splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle);
 
     int deckIndex;
     DeckPlayer& deck;
@@ -64,7 +76,15 @@ private:
     bool isDragOver { false };
     bool isVideoMode { false };
     bool isVideoPlaying { false };
+    juce::String loadedVideoId;
     std::unique_ptr<class YouTubeVideoComponent> videoPlayer;
+    // ponytail: reloj virtual para modo video — el iframe YT no reporta
+    // posición (control unidireccional), así que se integra el tiempo en el
+    // timer de UI. Puede derivar si la red buferiza; sin puente JS no hay
+    // forma barata de resincronizar.
+    double videoPositionSeconds { 0.0 };
+    double videoDurationSeconds { 0.0 };
+    juce::uint32 videoLastTickMs { 0 };
 
     // Header elements (Matching DiscPro DeckHeader.tsx)
     juce::Label titleLabel;

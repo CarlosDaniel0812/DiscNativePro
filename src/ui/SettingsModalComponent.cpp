@@ -1,8 +1,8 @@
 #include "SettingsModalComponent.h"
 #include "../services/YouTubeService.h"
 
-SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr)
-    : audioEngine(engine), midi(midiMgr)
+SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr, int initialTab)
+    : audioEngine(engine), midi(midiMgr), activeTab(initialTab)
 {
     setSize(720, 540);
 
@@ -66,6 +66,15 @@ SettingsModalComponent::~SettingsModalComponent()
 {
     LanguageManager::getInstance().removeListener(this);
     midi.onMidiActivity = nullptr;
+}
+
+void SettingsModalComponent::setActiveTab(int tabIndex)
+{
+    activeTab = tabIndex;
+    updateTabVisibility();
+    bodyViewport.setViewPosition({ 0, 0 });
+    resized();
+    repaint();
 }
 
 void SettingsModalComponent::languageChanged()
@@ -218,7 +227,7 @@ void SettingsModalComponent::setupGeneralTab()
                                  juce::Colour::fromRGB(45, 50, 68));
     recBrowseBtn.onClick = [this]() {
         fileChooser = std::make_unique<juce::FileChooser>(
-            juce::String::fromUTF8("Seleccionar Carpeta para Grabaciones"),
+            LanguageManager::trUtf8("Seleccionar Carpeta para Grabaciones", "Select Recording Folder"),
             audioEngine.getRecordingDirectory(),
             "");
         auto folderFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;

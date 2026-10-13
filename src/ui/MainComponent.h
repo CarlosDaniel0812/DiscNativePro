@@ -7,6 +7,7 @@
 #include "MixerComponent.h"
 #include "LibraryComponent.h"
 #include "FxPanelComponent.h"
+#include "StemsPanelComponent.h"
 
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
@@ -30,12 +31,14 @@ private:
     // UI Structure matching DiscPro
     TopBarComponent topBar;
     FxPanelComponent fxPanel;
+    StemsPanelComponent stemsPanel;
     DeckComponent deck1;
     DeckComponent deck2;
     MixerComponent mixer;
     LibraryComponent library;
 
     bool isFxPanelVisible { true };
+    bool isStemsPanelVisible { false };
     juce::Component::SafePointer<juce::DialogWindow> settingsWindow;
 
     // Automix orchestration state
@@ -50,6 +53,7 @@ private:
     void startAutomix(const std::vector<TrackItem>& tracks);
     void stopAutomix();
     void automixAdvance();
+    void openSettings(int targetTab = 0);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

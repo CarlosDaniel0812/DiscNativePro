@@ -3,19 +3,14 @@
 MidiModalComponent::MidiModalComponent(MidiManager& midiMgr)
     : midi(midiMgr)
 {
-    // Header Title
-    headerTitle.setText("Controladores MIDI USB", juce::dontSendNotification);
     headerTitle.setFont(juce::FontOptions(13.5f, juce::Font::bold));
     headerTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(46, 196, 182));
     addAndMakeVisible(headerTitle);
 
-    // Description
-    descLabel.setText(juce::String::fromUTF8("DiscPro detecta automáticamente cualquier controladora DJ física conectada por USB (Pioneer DDJ, Hercules, Numark, Native Instruments). Mapea jog wheels, perillas de EQ, faders y pads."), juce::dontSendNotification);
     descLabel.setFont(juce::FontOptions(11.0f));
     descLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
     addAndMakeVisible(descLabel);
 
-    // Devices subheader
     devicesHeader.setFont(juce::FontOptions(10.5f, juce::Font::bold));
     devicesHeader.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(devicesHeader);
@@ -28,13 +23,10 @@ MidiModalComponent::MidiModalComponent(MidiManager& midiMgr)
     };
     addAndMakeVisible(scanBtn);
 
-    // Live Monitor
-    monitorHeader.setText(juce::String::fromUTF8("MONITOR DE SEÑALES MIDI EN VIVO"), juce::dontSendNotification);
     monitorHeader.setFont(juce::FontOptions(9.5f, juce::Font::bold));
     monitorHeader.setColour(juce::Label::textColourId, juce::Colour::fromRGB(100, 108, 125));
     addAndMakeVisible(monitorHeader);
 
-    monitorText.setText("Esperando movimiento de fader, jog o pad...", juce::dontSendNotification);
     monitorText.setFont(juce::FontOptions("Menlo", 11.5f, juce::Font::plain));
     monitorText.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
     addAndMakeVisible(monitorText);
@@ -44,19 +36,38 @@ MidiModalComponent::MidiModalComponent(MidiManager& midiMgr)
         monitorText.setText(desc, juce::dontSendNotification);
     };
 
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
     refreshDeviceList();
     setSize(480, 326);
 }
 
 MidiModalComponent::~MidiModalComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
     midi.onMidiActivity = nullptr;
+}
+
+void MidiModalComponent::languageChanged()
+{
+    refreshLanguage();
+}
+
+void MidiModalComponent::refreshLanguage()
+{
+    headerTitle.setText(LanguageManager::trUtf8("Controladores MIDI USB", "USB MIDI Controllers"), juce::dontSendNotification);
+    descLabel.setText(LanguageManager::trUtf8("DiscNativePro detecta automáticamente cualquier controladora DJ física conectada por USB (Pioneer DDJ, Hercules, Numark, Native Instruments). Mapea jog wheels, perillas de EQ, faders y pads.",
+                                             "DiscNativePro automatically detects any physical DJ controller connected via USB (Pioneer DDJ, Hercules, Numark, Native Instruments). Maps jog wheels, EQ knobs, faders and pads."), juce::dontSendNotification);
+    scanBtn.setButtonText(LanguageManager::trUtf8("Escanear", "Scan"));
+    monitorHeader.setText(LanguageManager::trUtf8("MONITOR DE SEÑALES MIDI EN VIVO", "LIVE MIDI SIGNAL MONITOR"), juce::dontSendNotification);
+    monitorText.setText(LanguageManager::trUtf8("Esperando movimiento de fader, jog o pad...", "Waiting for fader, jog or pad movement..."), juce::dontSendNotification);
+    refreshDeviceList();
 }
 
 void MidiModalComponent::refreshDeviceList()
 {
     currentDevices = midi.getConnectedDeviceNames();
-    devicesHeader.setText(juce::String::formatted("DISPOSITIVOS CONECTADOS (%d)", currentDevices.size()),
+    devicesHeader.setText(LanguageManager::trUtf8("DISPOSITIVOS CONECTADOS (", "CONNECTED DEVICES (") + juce::String(currentDevices.size()) + ")",
                           juce::dontSendNotification);
     repaint();
 }
@@ -97,11 +108,12 @@ void MidiModalComponent::paint(juce::Graphics& g)
 
         g.setColour(juce::Colour::fromRGB(255, 159, 28));
         g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-        g.drawText(juce::String::fromUTF8("No se detectó ningún controlador"), devBox.removeFromTop(60.0f), juce::Justification::centred, false);
+        g.drawText(LanguageManager::trUtf8("No se detectó ningún controlador", "No controller detected"), devBox.removeFromTop(60.0f), juce::Justification::centred, false);
 
         g.setColour(juce::Colour::fromRGB(142, 149, 165));
         g.setFont(juce::FontOptions(10.5f));
-        g.drawText(juce::String::fromUTF8("Conecta tu controladora DJ por cable USB a tu Mac y presiona 'Escanear'."),
+        g.drawText(LanguageManager::trUtf8("Conecta tu controladora DJ por cable USB y presiona 'Escanear'.",
+                                           "Connect your DJ controller via USB and click 'Scan'."),
                    devBox.removeFromTop(35.0f), juce::Justification::centred, false);
     }
     else
@@ -129,7 +141,7 @@ void MidiModalComponent::paint(juce::Graphics& g)
             g.setColour(juce::Colour::fromRGB(142, 149, 165));
             g.setFont(juce::FontOptions(10.0f));
             juce::Rectangle<int> subBox((int)(card.getX() + 30.0f), (int)(card.getY() + 26.0f), (int)(card.getWidth() - 120.0f), 14);
-            g.drawText("Fabricante: Dispositivo CoreMIDI USB", subBox, juce::Justification::centredLeft, true);
+            g.drawText(LanguageManager::trUtf8("Fabricante: Dispositivo MIDI USB", "Manufacturer: USB MIDI Device"), subBox, juce::Justification::centredLeft, true);
 
             // "Conectado" badge
             juce::Rectangle<float> badge(card.getRight() - 76.0f, card.getCentreY() - 9.0f, 66.0f, 18.0f);
@@ -137,7 +149,7 @@ void MidiModalComponent::paint(juce::Graphics& g)
             g.fillRoundedRectangle(badge, 4.0f);
             g.setColour(juce::Colour::fromRGB(46, 196, 182));
             g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-            g.drawText("Conectado", badge, juce::Justification::centred, false);
+            g.drawText(LanguageManager::trUtf8("Conectado", "Connected"), badge, juce::Justification::centred, false);
 
             cardY += 54.0f;
         }

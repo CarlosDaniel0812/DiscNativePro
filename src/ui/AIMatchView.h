@@ -1,12 +1,13 @@
 #pragma once
 
-#include <juce_gui_basics/juce_gui_basics.h>
 #include "../services/AIService.h"
+#include "../services/LanguageManager.h"
 #include "DjButton.h"
 #include "LucideIcons.h"
 #include <vector>
 
-class AIMatchView : public juce::Component
+class AIMatchView : public juce::Component,
+                    public LanguageManager::Listener
 {
 public:
     AIMatchView();
@@ -14,6 +15,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
     // Updates currently active track context from Deck 1 or Deck 2 or YouTube
     void updateActiveTrack(const CurrentTrackContext& ctx);
@@ -32,13 +35,15 @@ private:
     CurrentTrackContext currentContext;
     std::vector<juce::File> localFiles;
     std::vector<AIRecommendation> recommendations;
+    bool resultsUncertain { false }; // known:false -> la IA no reconoce la pista
+    juce::String lastPrefetchedVideoId;
 
     bool isLoading { false };
     juce::String statusMessage;
     juce::String errorMessage;
 
     // Header Controls
-    DjButton refreshButton { "Generar Recomendaciones ✨" };
+    DjButton refreshButton { "Generar Recomendaciones" };
     DjButton settingsShortcutButton { "Configurar IA" };
 
     // Scrollable container for recommendation cards

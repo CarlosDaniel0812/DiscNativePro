@@ -1,4 +1,5 @@
 #include "YouTubeVideoComponent.h"
+#include "YouTubeEmbedHtml.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #import <WebKit/WebKit.h>
 #import <Cocoa/Cocoa.h>
@@ -35,96 +36,11 @@ struct YouTubeVideoComponent::Pimpl
         }
     }
 
-    void loadVideo(const juce::String& videoId, float initialVol)
+    void loadVideo(const juce::String& videoId, bool autoplay)
     {
         if (webView == nil) return;
 
-        int vol = (int)(juce::jlimit(0.0f, 1.0f, initialVol) * 100.0f);
-
-        juce::String html =
-            "<!DOCTYPE html>"
-            "<html>"
-            "<head>"
-            "<meta name='viewport' content='width=device-width, initial-scale=1'>"
-            "<style>"
-            "* { margin: 0; padding: 0; box-sizing: border-box; }"
-            "body, html { width: 100%; height: 100%; overflow: hidden; background: #000; }"
-            "#player { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border: none; }"
-            "</style>"
-            "</head>"
-            "<body>"
-            "<iframe id='player' "
-            "  src='https://www.youtube-nocookie.com/embed/" + videoId + "?autoplay=1&controls=1&enablejsapi=1&origin=http://localhost:3000' "
-            "  allow='autoplay; encrypted-media; picture-in-picture' "
-            "  allowfullscreen></iframe>"
-            "<script src='https://www.youtube.com/iframe_api'></script>"
-            "<script>"
-            "var player;"
-            "function onYouTubeIframeAPIReady() {"
-            "  try {"
-            "    player = new YT.Player('player', {"
-            "      events: { 'onReady': onPlayerReady }"
-            "    });"
-            "  } catch(e) {}"
-            "}"
-            "function onPlayerReady(event) {"
-            "  try {"
-            "    event.target.unMute();"
-            "    event.target.setVolume(" + juce::String(vol) + ");"
-            "    event.target.playVideo();"
-            "  } catch(e) {}"
-            "}"
-            "function play() {"
-            "  try {"
-            "    if (player && player.playVideo) {"
-            "      player.unMute();"
-            "      player.playVideo();"
-            "    }"
-            "  } catch(e) {}"
-            "  var f = document.getElementById('player');"
-            "  if (f && f.contentWindow) {"
-            "    f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"unMute\",\"args\":\"\"}', '*');"
-            "    f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"playVideo\",\"args\":\"\"}', '*');"
-            "  }"
-            "}"
-            "function pause() {"
-            "  try {"
-            "    if (player && player.pauseVideo) player.pauseVideo();"
-            "  } catch(e) {}"
-            "  var f = document.getElementById('player');"
-            "  if (f && f.contentWindow) {"
-            "    f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}', '*');"
-            "  }"
-            "}"
-            "function setVolume(v) {"
-            "  try {"
-            "    if (player && player.setVolume) {"
-            "      player.setVolume(v);"
-            "      if (v <= 0) player.mute(); else player.unMute();"
-            "    }"
-            "  } catch(e) {}"
-            "  var f = document.getElementById('player');"
-            "  if (f && f.contentWindow) {"
-            "    if (v <= 0) {"
-            "      f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"mute\",\"args\":\"\"}', '*');"
-            "    } else {"
-            "      f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"unMute\",\"args\":\"\"}', '*');"
-            "      f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"setVolume\",\"args\":[' + v + ']}', '*');"
-            "    }"
-            "  }"
-            "}"
-            "function seek(s) {"
-            "  try {"
-            "    if (player && player.seekTo) player.seekTo(s, true);"
-            "  } catch(e) {}"
-            "  var f = document.getElementById('player');"
-            "  if (f && f.contentWindow) {"
-            "    f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"seekTo\",\"args\":[' + s + ', true]}', '*');"
-            "  }"
-            "}"
-            "</script>"
-            "</body>"
-            "</html>";
+        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay);
 
         NSString* nsHtml = [NSString stringWithUTF8String:html.toRawUTF8()];
         NSURL* baseUrl = [NSURL URLWithString:@"http://localhost:3000"];
@@ -160,9 +76,9 @@ struct YouTubeVideoComponent::Pimpl
 };
 
 YouTubeVideoComponent::YouTubeVideoComponent(int idx)
-    : deckIndex(idx),
-      pimpl(std::make_unique<Pimpl>())
+    : pimpl(std::make_unique<Pimpl>())
 {
+    juce::ignoreUnused(idx);
     addAndMakeVisible(pimpl->nsViewComp);
 }
 
@@ -170,11 +86,11 @@ YouTubeVideoComponent::~YouTubeVideoComponent()
 {
 }
 
-void YouTubeVideoComponent::loadVideo(const juce::String& videoId, const juce::String& title)
+void YouTubeVideoComponent::loadVideo(const juce::String& videoId, const juce::String& title, bool autoplay)
 {
     currentVideoId = videoId;
     currentVideoTitle = title;
-    pimpl->loadVideo(videoId, currentVolume);
+    pimpl->loadVideo(videoId, autoplay);
     repaint();
 }
 

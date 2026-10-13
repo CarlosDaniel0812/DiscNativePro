@@ -1,4 +1,5 @@
 #include "YouTubeVideoComponent.h"
+#include "YouTubeEmbedHtml.h"
 #include "LucideIcons.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -28,15 +29,13 @@ struct YouTubeVideoComponent::Pimpl
 
     ~Pimpl() = default;
 
-    void loadVideo(const juce::String& videoId, float initialVol)
+    void loadVideo(const juce::String& videoId, bool autoplay)
     {
-        juce::ignoreUnused(initialVol);
         if (!browser) return;
 
-        // Load YouTube embed directly into Edge WebView2
-        juce::String embedUrl = "https://www.youtube-nocookie.com/embed/" + videoId + 
-                                "?autoplay=1&controls=1&enablejsapi=1&origin=http://localhost:3000";
-        browser->goToURL(embedUrl);
+        // Wrapper con blocker anti-clics; data: URL porque WebBrowserComponent no expone loadHTMLString
+        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay);
+        browser->goToURL("data:text/html;charset=utf-8," + juce::URL::addEscapeChars(html, true));
     }
 
     void setVolume(float volume0to1)
@@ -66,20 +65,20 @@ struct YouTubeVideoComponent::Pimpl
 };
 
 YouTubeVideoComponent::YouTubeVideoComponent(int idx)
-    : deckIndex(idx),
-      pimpl(std::make_unique<Pimpl>())
+    : pimpl(std::make_unique<Pimpl>())
 {
+    juce::ignoreUnused(idx);
     if (pimpl->browser)
         addAndMakeVisible(*pimpl->browser);
 }
 
 YouTubeVideoComponent::~YouTubeVideoComponent() = default;
 
-void YouTubeVideoComponent::loadVideo(const juce::String& videoId, const juce::String& title)
+void YouTubeVideoComponent::loadVideo(const juce::String& videoId, const juce::String& title, bool autoplay)
 {
     currentVideoId = videoId;
     currentVideoTitle = title;
-    pimpl->loadVideo(videoId, currentVolume);
+    pimpl->loadVideo(videoId, autoplay);
     repaint();
 }
 

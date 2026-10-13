@@ -390,6 +390,78 @@ juce::Path LucideIcons::getPath(IconType icon)
             p.startNewSubPath(17.5f, 12.0f); p.lineTo(18.5f, 12.0f);
             break;
         }
+
+        case IconType::Coffee:
+        {
+            // Cup body
+            p.startNewSubPath(3.0f, 8.0f);
+            p.lineTo(17.0f, 8.0f);
+            p.lineTo(17.0f, 16.0f);
+            p.cubicTo(17.0f, 18.5f, 15.0f, 20.0f, 12.0f, 20.0f);
+            p.lineTo(8.0f, 20.0f);
+            p.cubicTo(5.0f, 20.0f, 3.0f, 18.5f, 3.0f, 16.0f);
+            p.closeSubPath();
+            // Handle
+            p.startNewSubPath(17.0f, 9.5f);
+            p.cubicTo(20.5f, 9.5f, 21.5f, 11.5f, 20.0f, 13.8f);
+            p.cubicTo(19.0f, 15.5f, 17.6f, 15.8f, 17.0f, 15.5f);
+            // Steam
+            p.startNewSubPath(7.0f, 2.5f);
+            p.lineTo(7.0f, 5.0f);
+            p.startNewSubPath(11.0f, 2.5f);
+            p.lineTo(11.0f, 5.0f);
+            p.startNewSubPath(15.0f, 2.5f);
+            p.lineTo(15.0f, 5.0f);
+            break;
+        }
+
+        case IconType::Usb:
+        {
+            // USB Connector / Plug (top)
+            p.addRoundedRectangle(8.0f, 2.0f, 8.0f, 5.5f, 1.2f);
+            // Pin notches inside connector
+            p.startNewSubPath(10.0f, 3.8f); p.lineTo(10.0f, 5.0f);
+            p.startNewSubPath(14.0f, 3.8f); p.lineTo(14.0f, 5.0f);
+            // Drive Body (bottom)
+            p.addRoundedRectangle(5.5f, 7.0f, 13.0f, 14.5f, 2.8f);
+            // Grip notch / subtle indicator line on body
+            p.startNewSubPath(9.5f, 12.0f); p.lineTo(14.5f, 12.0f);
+            break;
+        }
+
+        case IconType::SoundCloud:
+        {
+            // Vertical soundwave bars on left base:
+            p.addRoundedRectangle(1.5f, 13.0f, 1.6f, 5.0f, 0.8f);
+            p.addRoundedRectangle(4.0f, 10.5f, 1.6f, 7.5f, 0.8f);
+            p.addRoundedRectangle(6.5f, 9.0f, 1.6f, 9.0f, 0.8f);
+            // Cloud body
+            p.startNewSubPath(9.0f, 18.0f);
+            p.lineTo(20.0f, 18.0f);
+            p.cubicTo(22.2f, 18.0f, 23.5f, 16.5f, 23.5f, 14.5f);
+            p.cubicTo(23.5f, 12.8f, 22.0f, 11.2f, 20.0f, 11.2f);
+            p.cubicTo(19.8f, 7.5f, 16.5f, 5.5f, 13.5f, 6.5f);
+            p.cubicTo(11.5f, 7.2f, 10.0f, 9.2f, 9.8f, 11.5f);
+            p.lineTo(9.0f, 18.0f);
+            p.closeSubPath();
+            break;
+        }
+
+        case IconType::YouTube:
+        {
+            // Official YouTube Pill with Knockout Play Triangle
+            p.addRoundedRectangle(1.5f, 4.5f, 21.0f, 15.0f, 4.2f);
+
+            juce::Path tri;
+            tri.startNewSubPath(9.8f, 8.5f);
+            tri.lineTo(16.2f, 12.0f);
+            tri.lineTo(9.8f, 15.5f);
+            tri.closeSubPath();
+
+            p.addPath(tri);
+            p.setUsingNonZeroWinding(false); // Even-Odd fill rule creates the transparent cutout
+            break;
+        }
     }
 
     return p;
@@ -417,7 +489,7 @@ void LucideIcons::draw(juce::Graphics& g,
 
     g.setColour(colour);
 
-    if (fill || icon == IconType::Play)
+    if (fill || icon == IconType::Play || icon == IconType::SoundCloud || icon == IconType::YouTube)
     {
         g.fillPath(p);
     }

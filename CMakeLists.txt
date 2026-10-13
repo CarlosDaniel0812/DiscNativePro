@@ -53,6 +53,12 @@ target_sources(DiscNativePro
         src/services/ThumbnailCache.cpp
         src/services/AIService.h
         src/services/AIService.cpp
+        src/services/LanguageManager.h
+        src/services/LanguageManager.cpp
+        src/services/UsbDriveScanner.h
+        src/services/UsbDriveScanner.cpp
+        src/services/SoundCloudService.h
+        src/services/SoundCloudService.cpp
         src/ui/TopBarComponent.h
         src/ui/TopBarComponent.cpp
         src/ui/DjKnob.h
@@ -72,14 +78,20 @@ target_sources(DiscNativePro
         src/ui/DeckComponent.h
         src/ui/DeckComponent.cpp
         src/ui/YouTubeVideoComponent.h
+        src/ui/YouTubeEmbedHtml.h
+        src/ui/YouTubeEmbedHtml.cpp
         src/ui/MixerComponent.h
         src/ui/MixerComponent.cpp
         src/ui/LibraryComponent.h
         src/ui/LibraryComponent.cpp
         src/ui/YouTubeLibraryView.h
         src/ui/YouTubeLibraryView.cpp
+        src/ui/UsbLibraryView.h
+        src/ui/UsbLibraryView.cpp
         src/ui/AIMatchView.h
         src/ui/AIMatchView.cpp
+        src/ui/SoundCloudLibraryView.h
+        src/ui/SoundCloudLibraryView.cpp
         src/ui/FolderTreeComponent.h
         src/ui/FolderTreeComponent.cpp
         src/ui/MidiModalComponent.h
@@ -90,6 +102,8 @@ target_sources(DiscNativePro
         src/ui/FxSlotComponent.cpp
         src/ui/FxPanelComponent.h
         src/ui/FxPanelComponent.cpp
+        src/ui/StemsPanelComponent.h
+        src/ui/StemsPanelComponent.cpp
         src/ui/MainComponent.h
         src/ui/MainComponent.cpp
         src/ui/CoverArtGenerator.h

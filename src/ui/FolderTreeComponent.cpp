@@ -104,7 +104,10 @@ void FolderTreeComponent::TreeViewInternal::paint(juce::Graphics& g)
             auto textRect = juce::Rectangle<int>(indent, y, textWidth, getRowHeight());
             g.setColour(isSelected ? juce::Colours::white : juce::Colour::fromRGB(203, 213, 225));
             g.setFont(juce::FontOptions(11.5f, isSelected ? juce::Font::bold : juce::Font::plain));
-            g.drawText(row.name, textRect, juce::Justification::centredLeft, true);
+            juce::String displayName = (row.isSystem && row.name == "Todas las Pistas")
+                ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
+                : row.name;
+            g.drawText(displayName, textRect, juce::Justification::centredLeft, true);
         }
     }
 }
@@ -145,7 +148,11 @@ void FolderTreeComponent::TreeViewInternal::mouseDown(const juce::MouseEvent& e)
         if (!row.isSystem)
         {
             juce::PopupMenu m;
-            m.addItem(1, juce::String::fromUTF8("Desincronizar carpeta '") + row.name + juce::String::fromUTF8("' (") + juce::String(row.totalCount) + juce::String::fromUTF8(" canciones)"), true, false);
+            juce::String itemText = LanguageManager::trUtf8("Desincronizar carpeta '", "Unsync folder '")
+                                  + row.name + LanguageManager::trUtf8("' (", "' (")
+                                  + juce::String(row.totalCount) + " "
+                                  + LanguageManager::trUtf8("canciones)", "tracks)");
+            m.addItem(1, itemText, true, false);
             m.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this),
                 [this, path = row.fullPath](int res) {
                     if (res == 1 && owner.onUnsyncFolder)
@@ -190,7 +197,6 @@ void FolderTreeComponent::TreeViewInternal::mouseDown(const juce::MouseEvent& e)
 
 FolderTreeComponent::FolderTreeComponent()
 {
-    headerTitleLabel.setText("Mis Archivos", juce::dontSendNotification);
     headerTitleLabel.setFont(juce::FontOptions(12.0f, juce::Font::bold));
     headerTitleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(headerTitleLabel);
@@ -201,7 +207,6 @@ FolderTreeComponent::FolderTreeComponent()
                                   juce::Colour::fromRGB(0, 229, 255),
                                   juce::Colour::fromRGB(0, 229, 255),
                                   juce::Colour::fromRGB(38, 43, 56));
-    addFolderBtn.setTooltip(juce::String::fromUTF8("Importar carpeta o archivos con subcarpetas"));
     addFolderBtn.onClick = [this]() {
         if (onAddFolder) onAddFolder();
     };
@@ -212,10 +217,28 @@ FolderTreeComponent::FolderTreeComponent()
     viewport.setScrollBarsShown(true, false);
     viewport.setScrollBarThickness(6);
     addAndMakeVisible(viewport);
+
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
 }
 
 FolderTreeComponent::~FolderTreeComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
+}
+
+void FolderTreeComponent::languageChanged()
+{
+    refreshLanguage();
+}
+
+void FolderTreeComponent::refreshLanguage()
+{
+    headerTitleLabel.setText(LanguageManager::trUtf8("Mis Archivos", "My Files"), juce::dontSendNotification);
+    addFolderBtn.setTooltip(LanguageManager::trUtf8("Importar carpeta o archivos con subcarpetas", "Import folder or files with subfolders"));
+    if (treeView != nullptr)
+        treeView->repaint();
+    repaint();
 }
 
 void FolderTreeComponent::paint(juce::Graphics& g)

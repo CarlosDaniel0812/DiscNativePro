@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "LucideIcons.h"
 #include "DjButton.h"
+#include "../services/LanguageManager.h"
 #include <vector>
 #include <set>
 #include <map>
@@ -35,7 +36,8 @@ struct FlatFolderRow
     bool isExpanded { false };
 };
 
-class FolderTreeComponent : public juce::Component
+class FolderTreeComponent : public juce::Component,
+                            public LanguageManager::Listener
 {
 public:
     FolderTreeComponent();
@@ -43,6 +45,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
     void updateTree(const std::vector<TrackItem>& tracks);
     void setSelectedFolder(const juce::String& folderPath);

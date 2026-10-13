@@ -13,7 +13,7 @@ FxSlotComponent::FxSlotComponent(FxSlot& fxSlot)
     prevBtn.onClick = [this]() { cycleEffect(-1); };
     addAndMakeVisible(prevBtn);
 
-    fxNameBtn.setText(juce::String(getFxName(static_cast<FxType>(slot.type.load()))) + "  ▾");
+    fxNameBtn.setText(juce::String(getFxName(static_cast<FxType>(slot.type.load()))) + juce::String::fromUTF8("  ▾"));
     fxNameBtn.setFontSize(10.5f);
     fxNameBtn.setCustomColours(juce::Colour::fromRGB(22, 25, 34),
                                juce::Colour::fromRGB(241, 245, 249),
@@ -125,7 +125,7 @@ void FxSlotComponent::resized()
 
 void FxSlotComponent::updateUiFromSlot()
 {
-    fxNameBtn.setText(juce::String(getFxName(static_cast<FxType>(slot.type.load()))) + "  ▾");
+    fxNameBtn.setText(juce::String(getFxName(static_cast<FxType>(slot.type.load()))) + juce::String::fromUTF8("  ▾"));
     paramBtn.setText(getParamText());
 
     bool on = slot.enabled.load();

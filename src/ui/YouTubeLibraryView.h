@@ -5,11 +5,13 @@
 #include "../services/ThumbnailCache.h"
 #include "DjButton.h"
 #include "LucideIcons.h"
+#include "../services/LanguageManager.h"
 #include <vector>
 #include <functional>
 
 class YouTubeLibraryView : public juce::Component,
-                           public juce::TableListBoxModel
+                           public juce::TableListBoxModel,
+                           public LanguageManager::Listener
 {
 public:
     YouTubeLibraryView();
@@ -17,6 +19,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
     // TableListBoxModel overrides
     int getNumRows() override;

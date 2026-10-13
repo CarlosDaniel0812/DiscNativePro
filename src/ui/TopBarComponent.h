@@ -1,11 +1,11 @@
-#pragma once
-
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "DjButton.h"
+#include "../services/LanguageManager.h"
 #include <functional>
 
 class TopBarComponent : public juce::Component,
-                        public juce::Timer
+                        public juce::Timer,
+                        public LanguageManager::Listener
 {
 public:
     TopBarComponent();
@@ -14,13 +14,17 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void timerCallback() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
     void setRecordingState(bool recording, double elapsedSeconds = 0.0);
     bool isRecordingActive() const { return isRecording; }
     void setFxActive(bool active);
+    void setStemsActive(bool active);
 
     std::function<void()> onRecClicked;
     std::function<void()> onFxClicked;
+    std::function<void()> onStemsClicked;
     std::function<void()> onSettingsClicked;
     std::function<void()> onFullscreenClicked;
 

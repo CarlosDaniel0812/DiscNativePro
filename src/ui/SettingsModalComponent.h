@@ -14,13 +14,14 @@ class SettingsModalComponent : public juce::Component,
                                public LanguageManager::Listener
 {
 public:
-    SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr);
+    SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr, int initialTab = 0);
     ~SettingsModalComponent() override;
 
     void paint(juce::Graphics& g) override;
     void resized() override;
     void languageChanged() override;
     void refreshLanguage();
+    void setActiveTab(int tabIndex);
 
     std::function<void()> onClose;
 

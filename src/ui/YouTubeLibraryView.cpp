@@ -133,22 +133,50 @@ YouTubeLibraryView::YouTubeLibraryView()
 
     // Initial search for popular mixes
     performSearch("Tech House DJ Mix");
+
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
 }
 
 YouTubeLibraryView::~YouTubeLibraryView()
 {
+    LanguageManager::getInstance().removeListener(this);
+}
+
+void YouTubeLibraryView::languageChanged()
+{
+    refreshLanguage();
+}
+
+void YouTubeLibraryView::refreshLanguage()
+{
+    searchBtn.setText(LanguageManager::trUtf8("Buscar", "Search"));
+    pasteUrlBtn.setText(LanguageManager::trUtf8("Pegar URL", "Paste URL"));
+    searchBox.setTextToShowWhenEmpty(LanguageManager::trUtf8("Buscar canciones, mixes o pegar enlace de YouTube...",
+                                                             "Search songs, mixes or paste YouTube link..."),
+                                     juce::Colour::fromRGB(110, 118, 135));
+
+    table.getHeader().setColumnName(2, LanguageManager::trUtf8("VISTA PREVIA", "PREVIEW"));
+    table.getHeader().setColumnName(3, LanguageManager::trUtf8("TÍTULO DEL VIDEO", "VIDEO TITLE"));
+    table.getHeader().setColumnName(4, LanguageManager::trUtf8("CANAL / ARTISTA", "CHANNEL / ARTIST"));
+    table.getHeader().setColumnName(5, LanguageManager::trUtf8("DURACIÓN", "DURATION"));
+    table.getHeader().setColumnName(6, LanguageManager::trUtf8("CARGAR", "LOAD"));
+
+    updateApiStatus();
+    table.repaint();
+    repaint();
 }
 
 void YouTubeLibraryView::updateApiStatus()
 {
     if (YouTubeService::hasApiKey())
     {
-        apiStatusBadge.setText(juce::String::fromUTF8("● YouTube API v3: Conectada (Sin Anuncios)"), juce::dontSendNotification);
+        apiStatusBadge.setText(LanguageManager::trUtf8("● YouTube API v3: Conectada (Sin Anuncios)", "● YouTube API v3: Connected (No Ads)"), juce::dontSendNotification);
         apiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
     }
     else
     {
-        apiStatusBadge.setText(juce::String::fromUTF8("● Modo Scraping Público Activo"), juce::dontSendNotification);
+        apiStatusBadge.setText(LanguageManager::trUtf8("● Modo Scraping Público Activo", "● Public Scraping Active"), juce::dontSendNotification);
         apiStatusBadge.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
     }
 }
@@ -163,18 +191,18 @@ void YouTubeLibraryView::performSearch(const juce::String& query)
     juce::String extracted = YouTubeService::extractVideoId(q);
     if (extracted.length() == 11 && !q.contains(" "))
     {
-        statusLabel.setText("Cargando video directo...", juce::dontSendNotification);
+        statusLabel.setText(LanguageManager::trUtf8("Cargando video directo...", "Loading direct video..."), juce::dontSendNotification);
         auto details = YouTubeService::getVideoDetails(extracted);
         searchResults.clear();
         searchResults.push_back(details);
         table.updateContent();
         table.repaint();
-        statusLabel.setText("Video listo para cargar o arrastrar", juce::dontSendNotification);
+        statusLabel.setText(LanguageManager::trUtf8("Video listo para cargar o arrastrar", "Video ready to load or drag"), juce::dontSendNotification);
         return;
     }
 
     isSearching = true;
-    statusLabel.setText("Buscando en YouTube...", juce::dontSendNotification);
+    statusLabel.setText(LanguageManager::trUtf8("Buscando en YouTube...", "Searching YouTube..."), juce::dontSendNotification);
     repaint();
 
     YouTubeService::searchAsync(q, [this, q](const std::vector<YouTubeSearchResult>& results) {
@@ -185,11 +213,12 @@ void YouTubeLibraryView::performSearch(const juce::String& query)
 
         if (searchResults.empty())
         {
-            statusLabel.setText(juce::String::fromUTF8("No se encontraron resultados para '") + q + "'.", juce::dontSendNotification);
+            statusLabel.setText(LanguageManager::trUtf8("No se encontraron resultados para '", "No results found for '") + q + "'.", juce::dontSendNotification);
         }
         else
         {
-            statusLabel.setText(juce::String::formatted("Mostrando %d videos encontrados en YouTube", (int)searchResults.size()),
+            statusLabel.setText(LanguageManager::trUtf8("Mostrando ", "Showing ") + juce::String((int)searchResults.size())
+                                + LanguageManager::trUtf8(" videos encontrados en YouTube", " videos found on YouTube"),
                                 juce::dontSendNotification);
         }
     });
@@ -200,7 +229,7 @@ void YouTubeLibraryView::handlePasteUrl()
     juce::String clip = juce::SystemClipboard::getTextFromClipboard().trim();
     if (clip.isEmpty())
     {
-        statusLabel.setText("El portapapeles está vacío", juce::dontSendNotification);
+        statusLabel.setText(LanguageManager::trUtf8("El portapapeles está vacío", "Clipboard is empty"), juce::dontSendNotification);
         return;
     }
 
@@ -208,13 +237,13 @@ void YouTubeLibraryView::handlePasteUrl()
     if (videoId.isNotEmpty())
     {
         searchBox.setText(clip, juce::dontSendNotification);
-        statusLabel.setText("Obteniendo información del video...", juce::dontSendNotification);
+        statusLabel.setText(LanguageManager::trUtf8("Obteniendo información del video...", "Getting video information..."), juce::dontSendNotification);
         auto item = YouTubeService::getVideoDetails(videoId);
         searchResults.clear();
         searchResults.push_back(item);
         table.updateContent();
         table.repaint();
-        statusLabel.setText(juce::String::fromUTF8("Video listo: ") + item.title, juce::dontSendNotification);
+        statusLabel.setText(LanguageManager::trUtf8("Video listo: ", "Video ready: ") + item.title, juce::dontSendNotification);
     }
     else
     {
@@ -389,6 +418,10 @@ void YouTubeLibraryView::paint(juce::Graphics& g)
     auto bounds = getLocalBounds().toFloat();
     g.setColour(juce::Colour::fromRGB(12, 13, 18));
     g.fillRoundedRectangle(bounds, 6.0f);
+
+    // YouTube brand icon in top header row
+    auto iconRect = juce::Rectangle<float>(10.0f, 13.0f, 20.0f, 18.0f);
+    LucideIcons::draw(g, LucideIcons::IconType::YouTube, iconRect, juce::Colour::fromRGB(239, 68, 68));
 }
 
 void YouTubeLibraryView::resized()
@@ -397,7 +430,8 @@ void YouTubeLibraryView::resized()
 
     // Row 1: Header + API status badge (28px)
     auto topRow = area.removeFromTop(28);
-    headerTitle.setBounds(topRow.removeFromLeft(240));
+    topRow.removeFromLeft(26); // space for YouTube icon
+    headerTitle.setBounds(topRow.removeFromLeft(230));
     apiStatusBadge.setBounds(topRow);
 
     area.removeFromTop(6);

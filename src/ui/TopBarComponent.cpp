@@ -22,7 +22,6 @@ TopBarComponent::TopBarComponent()
     recButton.onClick = [this]() { if (onRecClicked) onRecClicked(); };
     addAndMakeVisible(recButton);
 
-    fxButton.setIcon(LucideIcons::IconType::Sparkles, 13.0f);
     fxButton.setText("FX");
     fxButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
                               juce::Colour::fromRGB(96, 165, 250),
@@ -37,10 +36,11 @@ TopBarComponent::TopBarComponent()
                                  juce::Colour::fromRGB(148, 163, 184),
                                  juce::Colour::fromRGB(148, 163, 184),
                                  juce::Colour::fromRGB(45, 50, 65));
+    stemsButton.onClick = [this]() { if (onStemsClicked) onStemsClicked(); };
     addAndMakeVisible(stemsButton);
 
     // 2. Center Brand
-    brandLabel.setText("DiscPro", juce::dontSendNotification);
+    brandLabel.setText("DiscNativePro", juce::dontSendNotification);
     brandLabel.setFont(juce::FontOptions(15.0f, juce::Font::bold));
     brandLabel.setColour(juce::Label::textColourId, juce::Colours::white);
     brandLabel.setJustificationType(juce::Justification::centred);
@@ -91,12 +91,32 @@ TopBarComponent::TopBarComponent()
     fullscreenButton.onClick = [this]() { if (onFullscreenClicked) onFullscreenClicked(); };
     addAndMakeVisible(fullscreenButton);
 
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
+
     startTimer(1000); // 1-second clock timer
 }
 
 TopBarComponent::~TopBarComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
     stopTimer();
+}
+
+void TopBarComponent::languageChanged()
+{
+    refreshLanguage();
+}
+
+void TopBarComponent::refreshLanguage()
+{
+    ramLabel.setTooltip(LanguageManager::trUtf8("Consumo de memoria RAM de DiscNativePro en tiempo real", "Real-time RAM usage of DiscNativePro"));
+    settingsButton.setTooltip(LanguageManager::trUtf8("Preferencias", "Preferences"));
+    fullscreenButton.setTooltip(LanguageManager::trUtf8("Pantalla Completa", "Fullscreen"));
+    recButton.setTooltip(LanguageManager::trUtf8("Grabar Sesión (⌘R / Ctrl+R)", "Record Session (⌘R / Ctrl+R)"));
+    fxButton.setTooltip(LanguageManager::trUtf8("Panel de Efectos (FX)", "Effects Panel (FX)"));
+    stemsButton.setTooltip(LanguageManager::trUtf8("Separación de Pistas (STEMS)", "Track Separation (STEMS)"));
+    layoutBadge.setText(LanguageManager::trUtf8("2 Bandejas", "2 Decks"));
 }
 
 void TopBarComponent::setFxActive(bool active)
@@ -117,8 +137,25 @@ void TopBarComponent::setFxActive(bool active)
     }
 }
 
-void TopBarComponent::setRecordingState(bool recording, double elapsedSeconds)
+void TopBarComponent::setStemsActive(bool active)
 {
+    if (active)
+    {
+        stemsButton.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
+                                     juce::Colour::fromRGB(56, 189, 248),
+                                     juce::Colour::fromRGB(56, 189, 248),
+                                     juce::Colour::fromRGB(56, 189, 248).withAlpha(0.6f));
+    }
+    else
+    {
+        stemsButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                                     juce::Colour::fromRGB(148, 163, 184),
+                                     juce::Colour::fromRGB(148, 163, 184),
+                                     juce::Colour::fromRGB(45, 50, 65));
+    }
+}
+
+void TopBarComponent::setRecordingState(bool recording, double elapsedSeconds){
     isRecording = recording;
     currentRecSeconds = elapsedSeconds;
 
@@ -257,6 +294,6 @@ void TopBarComponent::resized()
     ramLabel.setBounds(area.removeFromRight(95).reduced(0, 3));
 
     // Center Brand Title
-    int centerWidth = 140;
+    int centerWidth = 220;
     brandLabel.setBounds((getWidth() - centerWidth) / 2 + 10, area.getY(), centerWidth, area.getHeight());
 }

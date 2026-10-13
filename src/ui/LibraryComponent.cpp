@@ -1,5 +1,7 @@
 #include "LibraryComponent.h"
 #include "YouTubeLibraryView.h"
+#include "UsbLibraryView.h"
+#include "SoundCloudLibraryView.h"
 #include "../audio/SampleTrackGenerator.h"
 #include "../audio/BeatDetector.h"
 #include "CoverArtGenerator.h"
@@ -68,15 +70,25 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
                              active ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
         addAndMakeVisible(btn);
     };
-    setupRailIcon(railIcon1, LucideIcons::IconType::Music, juce::Colour::fromRGB(0, 229, 255), true); // Active music
-    setupRailIcon(railIcon2, LucideIcons::IconType::Sparkles, juce::Colour::fromRGB(192, 132, 252), false); // AI Smart Match
-    setupRailIcon(railIcon3, LucideIcons::IconType::Disc, juce::Colour::fromRGB(46, 196, 182), false); // Vinyl
-    setupRailIcon(railIcon4, LucideIcons::IconType::Tv, juce::Colour::fromRGB(148, 163, 184), false); // TV
-    setupRailIcon(railIcon5, LucideIcons::IconType::MoreHorizontal, juce::Colour::fromRGB(148, 163, 184), false); // ...
+    setupRailIcon(railLocalBtn, LucideIcons::IconType::Music, juce::Colour::fromRGB(0, 229, 255), true); // Active music
+    setupRailIcon(railUsbBtn, LucideIcons::IconType::Usb, juce::Colour::fromRGB(52, 211, 153), false); // USB Library
+    setupRailIcon(railAiBtn, LucideIcons::IconType::Sparkles, juce::Colour::fromRGB(192, 132, 252), false); // AI Smart Match
+    setupRailIcon(railYtBtn, LucideIcons::IconType::YouTube, juce::Colour::fromRGB(239, 68, 68), false); // YouTube
+    setupRailIcon(railScBtn, LucideIcons::IconType::SoundCloud, juce::Colour::fromRGB(255, 85, 0), false); // SoundCloud
 
-    railIcon1.onClick = [this]() { setLibraryMode(LibraryMode::Local); };
-    railIcon2.onClick = [this]() { setLibraryMode(LibraryMode::AIMatch); };
-    railIcon4.onClick = [this]() { setLibraryMode(LibraryMode::YouTube); };
+    railLocalBtn.onClick = [this]() { setLibraryMode(LibraryMode::Local); };
+    railUsbBtn.onClick = [this]() { setLibraryMode(LibraryMode::USB); };
+    railAiBtn.onClick = [this]() { setLibraryMode(LibraryMode::AIMatch); };
+    railYtBtn.onClick = [this]() { setLibraryMode(LibraryMode::YouTube); };
+    railScBtn.onClick = [this]() { setLibraryMode(LibraryMode::SoundCloud); };
+
+    // USB View
+    usbView = std::make_unique<UsbLibraryView>(formatManager);
+    usbView->onLoadTrack = [this](int deckIndex, const juce::File& file) {
+        if (onLoadTrack)
+            onLoadTrack(deckIndex, file);
+    };
+    addChildComponent(*usbView);
 
     // YouTube View
     youtubeView = std::make_unique<YouTubeLibraryView>();
@@ -85,7 +97,7 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
             onLoadYouTubeTrack(deckIndex, video);
     };
     youtubeView->onOpenSettings = [this]() {
-        if (onOpenSettings) onOpenSettings();
+        if (onOpenSettings) onOpenSettings(5);
     };
     addChildComponent(*youtubeView);
 
@@ -101,9 +113,17 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
             youtubeView->performSearch(query);
     };
     aiMatchView->onOpenSettings = [this]() {
-        if (onOpenSettings) onOpenSettings();
+        if (onOpenSettings) onOpenSettings(6);
     };
     addChildComponent(*aiMatchView);
+
+    // SoundCloud View
+    soundcloudView = std::make_unique<SoundCloudLibraryView>();
+    soundcloudView->onLoadTrack = [this](int deckIndex, const juce::File& file, const juce::String&, const juce::String&) {
+        if (onLoadTrack)
+            onLoadTrack(deckIndex, file);
+    };
+    addChildComponent(*soundcloudView);
 
     // 2. "Mis Archivos" Hierarchical Folder Tree
     folderTree.onSelectFolder = [this](const juce::String& folderPath) {
@@ -214,16 +234,63 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     filteredTracks = allTracks;
     folderTree.updateTree(allTracks);
     table.updateContent();
+
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
+
+    setLibraryMode(LibraryMode::Local);
 }
 
 LibraryComponent::~LibraryComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
+}
+
+void LibraryComponent::languageChanged()
+{
+    refreshLanguage();
+}
+
+void LibraryComponent::refreshLanguage()
+{
+    table.getHeader().setColumnName(3, LanguageManager::trUtf8("TÍTULO", "TITLE"));
+    table.getHeader().setColumnName(4, LanguageManager::trUtf8("ARTISTA", "ARTIST"));
+    table.getHeader().setColumnName(5, LanguageManager::trUtf8("ÁLBUM", "ALBUM"));
+    table.getHeader().setColumnName(6, LanguageManager::trUtf8("DURACIÓN", "DURATION"));
+    table.getHeader().setColumnName(9, LanguageManager::trUtf8("CARGAR", "LOAD"));
+
+    addBtn.setText(LanguageManager::trUtf8("Añadir", "Add"));
+    searchBox.setTextToShowWhenEmpty(LanguageManager::trUtf8("Explora Mis Archivos...", "Browse My Files..."), juce::Colour::fromRGB(100, 108, 125));
+
+    if (automixRunning)
+        startAutomixBtn.setText(LanguageManager::trUtf8("Detener Automix", "Stop Automix"));
+    else
+        startAutomixBtn.setText(LanguageManager::trUtf8("Comenzar Automix", "Start Automix"));
+
+    if (automixQueue.empty())
+        queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
+    else
+        queueTitle.setText(LanguageManager::trUtf8("COLA · ", "QUEUE · ") + juce::String((int)automixQueue.size()) + LanguageManager::trUtf8(" pistas", " tracks"), juce::dontSendNotification);
+
+    railLocalBtn.setTooltip(LanguageManager::trUtf8("Biblioteca Local (Mis Archivos)", "Local Library (My Files)"));
+    railUsbBtn.setTooltip(LanguageManager::trUtf8("Biblioteca USB", "USB Library"));
+    railAiBtn.setTooltip(LanguageManager::trUtf8("Recomendaciones IA (AI Match)", "AI Match Recommendations"));
+    railYtBtn.setTooltip(LanguageManager::trUtf8("YouTube DJ Streaming", "YouTube DJ Streaming"));
+    railScBtn.setTooltip(LanguageManager::trUtf8("SoundCloud DJ Streaming", "SoundCloud DJ Streaming"));
+
+    juce::String folderDisplay = (currentSelectedFolder == "Todas las Pistas")
+        ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
+        : currentSelectedFolder;
+    tableHeaderTitle.setText(folderDisplay + "  " + juce::String((int)filteredTracks.size()) + " " + LanguageManager::trUtf8("Canciones", "Tracks"), juce::dontSendNotification);
+
+    table.repaint();
+    repaint();
 }
 
 void LibraryComponent::importFiles()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
-        "Seleccionar archivos de musica...",
+        LanguageManager::trUtf8("Seleccionar archivos de musica...", "Select music files..."),
         juce::File::getSpecialLocation(juce::File::userMusicDirectory),
         "*.wav;*.mp3;*.flac;*.aiff;*.aif;*.m4a;*.ogg;*.aac");
 
@@ -242,7 +309,7 @@ void LibraryComponent::importFiles()
 void LibraryComponent::importFolder()
 {
     fileChooser = std::make_unique<juce::FileChooser>(
-        "Seleccionar carpeta con musica...",
+        LanguageManager::trUtf8("Seleccionar carpeta con musica...", "Select music folder..."),
         juce::File::getSpecialLocation(juce::File::userMusicDirectory));
 
     auto folderFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;
@@ -389,24 +456,36 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
 void LibraryComponent::setLibraryMode(LibraryMode mode)
 {
     currentMode = mode;
-    bool isLocal = (currentMode == LibraryMode::Local);
-    bool isYt    = (currentMode == LibraryMode::YouTube);
-    bool isAi    = (currentMode == LibraryMode::AIMatch);
+    bool isLocal  = (currentMode == LibraryMode::Local);
+    bool isUsb    = (currentMode == LibraryMode::USB);
+    bool isYt     = (currentMode == LibraryMode::YouTube);
+    bool isAi     = (currentMode == LibraryMode::AIMatch);
+    bool isSc     = (currentMode == LibraryMode::SoundCloud);
 
-    railIcon1.setCustomColours(isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
-                              juce::Colour::fromRGB(0, 229, 255),
-                              juce::Colour::fromRGB(0, 229, 255),
-                              isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+    railLocalBtn.setCustomColours(isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
+                               juce::Colour::fromRGB(0, 229, 255),
+                               juce::Colour::fromRGB(0, 229, 255),
+                               isLocal ? juce::Colour::fromRGB(0, 180, 216).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
 
-    railIcon2.setCustomColours(isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.25f) : juce::Colour::fromRGB(18, 20, 26),
-                              isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
-                              isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
-                              isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+    railUsbBtn.setCustomColours(isUsb ? juce::Colour::fromRGB(52, 211, 153).withAlpha(0.25f) : juce::Colour::fromRGB(18, 20, 26),
+                               isUsb ? juce::Colour::fromRGB(110, 231, 183) : juce::Colour::fromRGB(148, 163, 184),
+                               isUsb ? juce::Colour::fromRGB(110, 231, 183) : juce::Colour::fromRGB(148, 163, 184),
+                               isUsb ? juce::Colour::fromRGB(52, 211, 153).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
 
-    railIcon4.setCustomColours(isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
-                              isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
-                              isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
-                              isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+    railAiBtn.setCustomColours(isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.25f) : juce::Colour::fromRGB(18, 20, 26),
+                               isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
+                               isAi ? juce::Colour::fromRGB(192, 132, 252) : juce::Colour::fromRGB(148, 163, 184),
+                               isAi ? juce::Colour::fromRGB(147, 51, 234).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+
+    railYtBtn.setCustomColours(isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.2f) : juce::Colour::fromRGB(18, 20, 26),
+                               isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
+                               isYt ? juce::Colour::fromRGB(239, 68, 68) : juce::Colour::fromRGB(148, 163, 184),
+                               isYt ? juce::Colour::fromRGB(220, 38, 38).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
+
+    railScBtn.setCustomColours(isSc ? juce::Colour::fromRGB(255, 85, 0).withAlpha(0.25f) : juce::Colour::fromRGB(18, 20, 26),
+                               isSc ? juce::Colour::fromRGB(255, 120, 40) : juce::Colour::fromRGB(148, 163, 184),
+                               isSc ? juce::Colour::fromRGB(255, 120, 40) : juce::Colour::fromRGB(148, 163, 184),
+                                isSc ? juce::Colour::fromRGB(255, 85, 0).withAlpha(0.4f) : juce::Colour::fromRGB(30, 34, 44));
 
     folderTree.setVisible(isLocal);
     tableHeaderTitle.setVisible(isLocal);
@@ -417,6 +496,13 @@ void LibraryComponent::setLibraryMode(LibraryMode mode)
     startAutomixBtn.setVisible(isLocal);
     clearQueueBtn.setVisible(isLocal && !automixQueue.empty());
     queueTitle.setVisible(isLocal);
+
+    if (usbView != nullptr)
+    {
+        usbView->setVisible(isUsb);
+        if (isUsb)
+            usbView->refreshDrives();
+    }
 
     if (youtubeView != nullptr)
     {
@@ -435,6 +521,11 @@ void LibraryComponent::setLibraryMode(LibraryMode mode)
                 files.push_back(t.file);
             aiMatchView->setLocalLibraryFiles(files);
         }
+    }
+
+    if (soundcloudView != nullptr)
+    {
+        soundcloudView->setVisible(isSc);
     }
 
     resized();
@@ -486,7 +577,10 @@ void LibraryComponent::filterTracks(const juce::String& query)
     }
 
     // Update table header title
-    tableHeaderTitle.setText(currentSelectedFolder + "  " + juce::String(filteredTracks.size()) + " Canciones", juce::dontSendNotification);
+    juce::String folderDisplay = (currentSelectedFolder == "Todas las Pistas")
+        ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
+        : currentSelectedFolder;
+    tableHeaderTitle.setText(folderDisplay + "  " + juce::String((int)filteredTracks.size()) + " " + LanguageManager::trUtf8("Canciones", "Tracks"), juce::dontSendNotification);
 
     table.updateContent();
     table.repaint();
@@ -731,13 +825,13 @@ void LibraryComponent::paint(juce::Graphics& g)
 
         g.setColour(juce::Colour::fromRGB(203, 213, 225));
         g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
-        g.drawText(juce::String::fromUTF8("Arrastra canciones aqu\xc3\xad"),
+        g.drawText(LanguageManager::trUtf8("Arrastra canciones aquí", "Drop tracks here"),
                    (int)dropArea.getX(), (int)(iconCentreY + 22.0f), (int)dropArea.getWidth(), 18,
                    juce::Justification::centred, false);
 
         g.setColour(juce::Colour::fromRGB(100, 108, 125));
         g.setFont(juce::FontOptions(9.5f));
-        g.drawText(juce::String::fromUTF8("Usa Shift o Cmd+A para seleccionar\ny arrastrar varias pistas."),
+        g.drawText(LanguageManager::trUtf8("Usa Shift o Cmd+A para seleccionar\ny arrastrar varias pistas.", "Use Shift or Cmd+A to select\nand drag multiple tracks."),
                    (int)dropArea.getX() + 8, (int)(iconCentreY + 40.0f), (int)dropArea.getWidth() - 16, 30,
                    juce::Justification::centred, true);
     }
@@ -799,7 +893,7 @@ void LibraryComponent::paint(juce::Graphics& g)
         {
             g.setColour(juce::Colour::fromRGB(100, 108, 125));
             g.setFont(juce::FontOptions(9.5f));
-            g.drawText("+" + juce::String((int)automixQueue.size() - maxVisible) + juce::String::fromUTF8(" m\xc3\xa1s..."),
+            g.drawText("+" + juce::String((int)automixQueue.size() - maxVisible) + " " + LanguageManager::trUtf8("más...", "more..."),
                        (int)dropArea.getX(), (int)(dropArea.getBottom() - 18.0f), (int)dropArea.getWidth(), 16,
                        juce::Justification::centred, false);
         }
@@ -812,15 +906,22 @@ void LibraryComponent::resized()
 
     // 1. Far-Left Vertical Icon Rail (42px)
     auto railArea = area.removeFromLeft(42).reduced(4, 6);
-    railIcon1.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+    railLocalBtn.setBounds(railArea.removeFromTop(32).reduced(1, 1));
     railArea.removeFromTop(4);
-    railIcon2.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+    railUsbBtn.setBounds(railArea.removeFromTop(32).reduced(1, 1));
     railArea.removeFromTop(4);
-    railIcon3.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+    railAiBtn.setBounds(railArea.removeFromTop(32).reduced(1, 1));
     railArea.removeFromTop(4);
-    railIcon4.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+    railYtBtn.setBounds(railArea.removeFromTop(32).reduced(1, 1));
     railArea.removeFromTop(4);
-    railIcon5.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+    railScBtn.setBounds(railArea.removeFromTop(32).reduced(1, 1));
+
+    if (currentMode == LibraryMode::USB)
+    {
+        if (usbView != nullptr)
+            usbView->setBounds(area);
+        return;
+    }
 
     if (currentMode == LibraryMode::YouTube)
     {
@@ -833,6 +934,13 @@ void LibraryComponent::resized()
     {
         if (aiMatchView != nullptr)
             aiMatchView->setBounds(area);
+        return;
+    }
+
+    if (currentMode == LibraryMode::SoundCloud)
+    {
+        if (soundcloudView != nullptr)
+            soundcloudView->setBounds(area);
         return;
     }
 
@@ -1029,7 +1137,7 @@ void LibraryComponent::addToAutomixQueue(const std::vector<TrackItem>& tracks)
                                          juce::Colour::fromRGB(59, 130, 246).withAlpha(0.4f));
     }
 
-    queueTitle.setText(juce::String::fromUTF8("COLA · ") + juce::String((int)automixQueue.size()) + " pistas",
+    queueTitle.setText(LanguageManager::trUtf8("COLA · ", "QUEUE · ") + juce::String((int)automixQueue.size()) + LanguageManager::trUtf8(" pistas", " tracks"),
                        juce::dontSendNotification);
     repaint();
 }
@@ -1044,7 +1152,7 @@ void LibraryComponent::clearAutomixQueue()
                                      juce::Colour::fromRGB(142, 149, 165),
                                      juce::Colour::fromRGB(38, 43, 56));
 
-    queueTitle.setText(juce::String::fromUTF8("COLA DE REPRODUCCIÓN"), juce::dontSendNotification);
+    queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
     repaint();
 }
 
@@ -1053,7 +1161,7 @@ void LibraryComponent::setAutomixRunning(bool running)
     automixRunning = running;
     if (running)
     {
-        startAutomixBtn.setText("Detener Automix");
+        startAutomixBtn.setText(LanguageManager::trUtf8("Detener Automix", "Stop Automix"));
         startAutomixBtn.setIcon(LucideIcons::IconType::Pause, 12.0f);
         startAutomixBtn.setCustomColours(juce::Colour::fromRGB(220, 38, 38).withAlpha(0.2f),
                                          juce::Colour::fromRGB(252, 165, 165),
@@ -1063,7 +1171,7 @@ void LibraryComponent::setAutomixRunning(bool running)
     }
     else
     {
-        startAutomixBtn.setText("Comenzar Automix");
+        startAutomixBtn.setText(LanguageManager::trUtf8("Comenzar Automix", "Start Automix"));
         startAutomixBtn.setIcon(LucideIcons::IconType::Sparkles, 12.0f);
         clearQueueBtn.setVisible(!automixQueue.empty());
 
@@ -1073,7 +1181,7 @@ void LibraryComponent::setAutomixRunning(bool running)
                                              juce::Colour::fromRGB(142, 149, 165),
                                              juce::Colour::fromRGB(142, 149, 165),
                                              juce::Colour::fromRGB(38, 43, 56));
-            queueTitle.setText(juce::String::fromUTF8("COLA DE REPRODUCCIÓN"), juce::dontSendNotification);
+            queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
         }
         else
         {

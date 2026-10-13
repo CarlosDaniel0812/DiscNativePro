@@ -1,4 +1,6 @@
 #include "AIService.h"
+#include "YouTubeService.h"
+#include "LanguageManager.h"
 #include <juce_events/juce_events.h>
 #include <thread>
 #include <cstdio>
@@ -29,6 +31,7 @@ AIProvider AIService::getProvider()
             if (p == "openai") return AIProvider::OpenAI;
             if (p == "claude") return AIProvider::Claude;
             if (p == "deepseek") return AIProvider::DeepSeek;
+            if (p == "openrouter") return AIProvider::OpenRouter;
             return AIProvider::Gemini;
         }
     }
@@ -59,6 +62,7 @@ juce::String AIService::getProviderName(AIProvider provider)
         case AIProvider::OpenAI:   return "OpenAI (ChatGPT)";
         case AIProvider::Claude:   return "Anthropic Claude";
         case AIProvider::DeepSeek: return "DeepSeek";
+        case AIProvider::OpenRouter: return "OpenRouter (200+ modelos)";
     }
     return "Google Gemini";
 }
@@ -71,8 +75,82 @@ juce::String AIService::getProviderKeyName(AIProvider provider)
         case AIProvider::OpenAI:   return "openai";
         case AIProvider::Claude:   return "claude";
         case AIProvider::DeepSeek: return "deepseek";
+        case AIProvider::OpenRouter: return "openrouter";
     }
     return "gemini";
+}
+
+juce::String AIService::getDefaultModel(AIProvider provider)
+{
+    switch (provider)
+    {
+        case AIProvider::Gemini:   return "gemini-3.8-flash";
+        case AIProvider::OpenAI:   return "gpt-4o-mini";
+        case AIProvider::Claude:   return "claude-3-5-haiku-20241022";
+        case AIProvider::DeepSeek: return "deepseek-chat";
+        case AIProvider::OpenRouter: return "google/gemini-2.5-flash";
+    }
+    return "gemini-3.8-flash";
+}
+
+juce::StringArray AIService::getAvailableModels(AIProvider provider)
+{
+    switch (provider)
+    {
+        case AIProvider::Gemini:
+            return { "gemini-3.8-flash", "gemini-3.6-flash", "gemini-2.5-flash" };
+        case AIProvider::OpenAI:
+            return { "gpt-4o-mini", "gpt-4o" };
+        case AIProvider::Claude:
+            return { "claude-3-5-haiku-20241022", "claude-3-5-sonnet-20241022" };
+        case AIProvider::DeepSeek:
+            return { "deepseek-chat", "deepseek-reasoner" };
+        case AIProvider::OpenRouter:
+            return { "google/gemini-2.5-flash", "anthropic/claude-3.5-haiku", "deepseek/deepseek-chat",
+                     "openai/gpt-4o-mini", "meta-llama/llama-3.3-70b-instruct", "x-ai/grok-3-mini" };
+    }
+    return { getDefaultModel(provider) };
+}
+
+juce::String AIService::getModel(AIProvider provider)
+{
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject())
+        {
+            juce::Identifier propId("aiModel_" + getProviderKeyName(provider));
+            if (json.hasProperty(propId))
+            {
+                auto m = json[propId].toString().trim();
+                if (m.isNotEmpty())
+                    return m;
+            }
+        }
+    }
+    return getDefaultModel(provider);
+}
+
+void AIService::setModel(AIProvider provider, const juce::String& model)
+{
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+    {
+        juce::Identifier propId("aiModel_" + getProviderKeyName(provider));
+        auto m = model.trim();
+        if (m.isNotEmpty())
+            obj->setProperty(propId, m);
+        else
+            obj->removeProperty(propId);
+    }
+    file.replaceWithText(juce::JSON::toString(json));
 }
 
 juce::String AIService::getApiKey(AIProvider provider)
@@ -157,32 +235,66 @@ bool AIService::isConfigured()
 juce::String AIService::buildPrompt(const CurrentTrackContext& context)
 {
     juce::String prompt;
-    prompt << "Actúa como un DJ y productor musical experto en mezclas armónicas para festivales y clubes.\n";
-    prompt << "La pista actualmente en reproducción es:\n";
-    prompt << "- Título: \"" << (context.title.isNotEmpty() ? context.title : "Pista de prueba") << "\"\n";
+    prompt << juce::String::fromUTF8("Actúa como un DJ experto que conoce qué pone el público junto a cada canción en festivales y clubes.\n");
+    prompt << juce::String::fromUTF8("La pista en reproducción es:\n");
+    prompt << juce::String::fromUTF8("- Título: \"") << (context.title.isNotEmpty() ? context.title : "desconocido") << "\"\n";
     if (context.artist.isNotEmpty())
         prompt << "- Artista: \"" << context.artist << "\"\n";
     if (context.bpm > 0.0)
         prompt << "- BPM Detectado: " << juce::String(context.bpm, 1) << "\n";
-    if (context.key.isNotEmpty() && context.key != "--")
-        prompt << "- Tonalidad Armónica (Camelot): " << context.key << "\n";
-    prompt << "- Fuente: " << (context.isVideo ? "Video de YouTube" : "Audio Local") << "\n\n";
+    if (context.key.isNotEmpty() && context.key != "--" && context.key != "YT")
+        prompt << "- Tonalidad (Camelot): " << context.key << "\n";
+    // Fuente + señales de audiencia (lo más importante va primero en el prompt)
+    if (context.audienceAlsoPlays.size() > 0)
+    {
+        prompt << juce::String::fromUTF8("- La audiencia de esta pista también escucha/mezcla: ");
+        for (int i = 0; i < context.audienceAlsoPlays.size(); ++i)
+        {
+            if (i > 0) prompt << " | ";
+            prompt << "\"" << context.audienceAlsoPlays[i] << "\"";
+        }
+        prompt << "\n";
+    }
+    if (context.videoTags.size() > 0)
+    {
+        prompt << "- Etiquetas del video: ";
+        for (int i = 0; i < context.videoTags.size(); ++i)
+        {
+            if (i > 0) prompt << ", ";
+            prompt << context.videoTags[i];
+        }
+        prompt << "\n";
+    }
+    prompt << "\n";
 
-    prompt << "Recomienda exactamente 5 canciones del mismo género musical o estilos compatibles (por ejemplo Tech House, Melodic Techno, Reggaeton, Afrobeats, etc.), "
-           << "con un tempo armónicamente mezclable (+/- 4 BPM) y energía fluida para una transición perfecta de DJ.\n";
-    prompt << "Responde ÚNICAMENTE un objeto JSON válido con la clave 'recommendations', siguiendo exactamente esta estructura:\n"
+    prompt << juce::String::fromUTF8("Paso 1: identifica el GÉNERO y escena exactos de la pista (ej. Latin Tech, Afro House, Melodic Techno). ")
+           << juce::String::fromUTF8("El género manda: toda recomendación debe ser del mismo género o de un estilo hermano que suene en las mismas fiestas.\n");
+    prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 5 canciones que el público y los DJs ponen JUNTO a esta canción ")
+           << "(co-ocurrencia real en sets y sesiones, no canciones vagamente parecidas). "
+           << juce::String::fromUTF8("Prioriza las de la lista de audiencia de arriba cuando encajen en género y energía.\n");
+    prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado) y energía continua (escala 1-10).\n");
+    prompt << juce::String::fromUTF8("Si NO reconoces la pista (título genérico, artista desconocido o es muy nueva), pon \"known\": false en TODAS ")
+           << juce::String::fromUTF8("y recomienda por género y energía en vez de inventar afinidades.\n");
+    prompt << juce::String::fromUTF8("PROHIBIDO markdown, cercas ``` o texto fuera del JSON. "
+                                     "Solo el objeto, nada más. Reasons de máximo 120 caracteres.\n");
+    prompt << juce::String::fromUTF8("Responde ÚNICAMENTE un objeto JSON válido con la clave 'recommendations', exactamente así:\n")
            << "{\n"
            << "  \"recommendations\": [\n"
            << "    {\n"
-           << "      \"title\": \"Nombre de la canción\",\n"
+           << juce::String::fromUTF8("      \"title\": \"Nombre de la canción\",\n")
            << "      \"artist\": \"Nombre del artista\",\n"
            << "      \"bpm\": 126,\n"
            << "      \"key\": \"8A\",\n"
            << "      \"genre\": \"Tech House\",\n"
-           << "      \"reason\": \"Mismo groove de percusión y tono armónico perfecto\"\n"
+           << juce::String::fromUTF8("      \"reason\": \"Suena en los mismos sets de FISHER; mismo groove y energía 8/10 para mantener la pista\",\n")
+           << "      \"matchType\": \"crowd\",\n"
+           << "      \"energy\": 8,\n"
+           << "      \"known\": true\n"
            << "    }\n"
            << "  ]\n"
-           << "}\n";
+           << "}\n"
+           << juce::String::fromUTF8("\"matchType\" solo admite: \"crowd\" (el público la pone junto a esta), ")
+           << juce::String::fromUTF8("\"genre\" (mismo género/escena) o \"harmonic\" (compatible por tempo/tono). Ordena: crowd primero.\n");
 
     return prompt;
 }
@@ -195,25 +307,29 @@ std::vector<AIRecommendation> AIService::parseResponse(AIProvider provider, cons
     auto parsed = juce::JSON::parse(rawJson);
     if (!parsed.isObject())
     {
-        outError = "Respuesta no válida del servidor de IA.";
+        outError = LanguageManager::trUtf8("Respuesta no válida del servidor de IA.", "Invalid response from AI server.");
         return list;
     }
 
     juce::String textContent;
+    bool truncated = false;
 
-    // Check Gemini format: candidates[0].content.parts[0].text
+    // Check Gemini format: candidates[0].content.parts[*].text (todas las partes, no solo la primera)
     if (parsed.hasProperty("candidates"))
     {
         auto candidates = parsed["candidates"];
         if (candidates.isArray() && candidates.size() > 0)
         {
             auto first = candidates[0];
+            if (first["finishReason"].toString().toUpperCase() == "MAX_TOKENS")
+                truncated = true;
             if (first.hasProperty("content") && first["content"].hasProperty("parts"))
             {
                 auto parts = first["content"]["parts"];
-                if (parts.isArray() && parts.size() > 0)
+                if (parts.isArray())
                 {
-                    textContent = parts[0]["text"].toString();
+                    for (int p = 0; p < parts.size(); ++p)
+                        textContent += parts[p]["text"].toString();
                 }
             }
         }
@@ -225,20 +341,28 @@ std::vector<AIRecommendation> AIService::parseResponse(AIProvider provider, cons
         if (choices.isArray() && choices.size() > 0)
         {
             auto first = choices[0];
+            if (first["finish_reason"].toString().toLowerCase() == "length")
+                truncated = true;
             if (first.hasProperty("message") && first["message"].hasProperty("content"))
             {
                 textContent = first["message"]["content"].toString();
             }
         }
     }
-    // Check Claude format: content[0].text
+    // Check Claude format: content[*].text (concatenar bloques de texto)
     else if (parsed.hasProperty("content"))
     {
         auto content = parsed["content"];
-        if (content.isArray() && content.size() > 0)
+        if (content.isArray())
         {
-            textContent = content[0]["text"].toString();
+            for (int c = 0; c < content.size(); ++c)
+            {
+                if (content[c]["type"].toString() == "text" || content[c].hasProperty("text"))
+                    textContent += content[c]["text"].toString();
+            }
         }
+        if (parsed["stop_reason"].toString().toLowerCase() == "max_tokens")
+            truncated = true;
     }
     // Direct recommendations key
     else if (parsed.hasProperty("recommendations"))
@@ -275,17 +399,54 @@ std::vector<AIRecommendation> AIService::parseResponse(AIProvider provider, cons
     }
     cleanText = cleanText.trim();
 
-    auto recsJson = juce::JSON::parse(cleanText);
-    if (!recsJson.isObject() || !recsJson.hasProperty("recommendations"))
+    // Salvamento: recortar preámbulos/epílogos (primer '{'/'[' ... último '}'/']')
     {
-        outError = "Formato JSON de recomendaciones no reconocido.";
+        int openBrace = cleanText.indexOf("{");
+        int openBracket = cleanText.indexOf("[");
+        int start = -1;
+        juce::String closeCh;
+        if (openBrace >= 0 && (openBracket < 0 || openBrace < openBracket))
+        {
+            start = openBrace;
+            closeCh = "}";
+        }
+        else if (openBracket >= 0)
+        {
+            start = openBracket;
+            closeCh = "]";
+        }
+        if (start > 0)
+            cleanText = cleanText.substring(start).trim();
+        int end = (start >= 0) ? cleanText.lastIndexOf(closeCh) : -1;
+        if (end > start)
+            cleanText = cleanText.substring(0, end + 1).trim();
+    }
+
+    auto recsJson = juce::JSON::parse(cleanText);
+    juce::var items;
+    if (recsJson.isArray())
+    {
+        items = recsJson; // el modelo devolvió el array pelado
+    }
+    else if (recsJson.isObject() && recsJson.hasProperty("recommendations"))
+    {
+        items = recsJson["recommendations"];
+    }
+    else
+    {
+        if (truncated)
+            outError = LanguageManager::trUtf8("Respuesta truncada por límite de tokens: regenera de nuevo.",
+                                               "Response truncated by token limit: regenerate again.");
+        else
+            outError = LanguageManager::trUtf8("Formato JSON de recomendaciones no reconocido.",
+                                               "Unrecognized recommendation JSON format.");
         return list;
     }
 
-    auto items = recsJson["recommendations"];
     if (!items.isArray())
     {
-        outError = "La lista de recomendaciones está vacía.";
+        outError = LanguageManager::trUtf8("La lista de recomendaciones está vacía.",
+                                           "Recommendation list is empty.");
         return list;
     }
 
@@ -302,6 +463,12 @@ std::vector<AIRecommendation> AIService::parseResponse(AIProvider provider, cons
         rec.genre  = it["genre"].toString();
         rec.reason = it["reason"].toString();
 
+        // Campos nuevos con defaults tolerantes (modelos viejos/configs viejas los omiten)
+        auto mt = it["matchType"].toString().toLowerCase().trim();
+        rec.matchType = (mt == "crowd" || mt == "harmonic") ? mt : "genre";
+        rec.energy = juce::jlimit(0, 10, (int)it["energy"]);
+        rec.known = it.hasProperty("known") ? (bool)it["known"] : true;
+
         if (rec.title.isNotEmpty())
             list.push_back(rec);
     }
@@ -315,6 +482,9 @@ void AIService::requestRecommendationsAsync(
 {
     auto provider = getProvider();
     auto apiKey = getApiKey(provider);
+    auto modelName = getModel(provider).trim();
+    if (modelName.isEmpty())
+        modelName = getDefaultModel(provider);
 
     if (apiKey.isEmpty())
     {
@@ -324,8 +494,32 @@ void AIService::requestRecommendationsAsync(
         return;
     }
 
-    std::thread([context, provider, apiKey, onComplete]() {
-        juce::String promptText = buildPrompt(context);
+    std::thread([context, provider, apiKey, modelName, onComplete]() {
+#if JUCE_DEBUG
+        const auto t0 = juce::Time::getMillisecondCounter();
+#endif
+
+        // Señal de audiencia en paralelo + caché (ver YouTubeService::getAudienceSignals)
+        CurrentTrackContext enriched = context;
+        if (enriched.isVideo && enriched.videoId.isNotEmpty())
+        {
+            auto signals = YouTubeService::getAudienceSignals(enriched.videoId);
+            enriched.audienceAlsoPlays = signals.related;
+            enriched.videoTags = signals.tags;
+        }
+        DBG("AI-Match: contexto listo en " << (juce::Time::getMillisecondCounter() - t0) << " ms");
+
+        std::vector<AIRecommendation> recs;
+        juce::String parseError;
+        bool apiError = false;
+
+        // A toda costa: reintento con auto-reparación si el modelo devuelve
+        // formato inválido (cualquier modelo de OpenRouter puede fallar).
+        for (int attempt = 0; attempt < 2 && recs.empty() && !apiError; ++attempt)
+        {
+            juce::String promptText = (attempt == 0)
+                ? buildPrompt(enriched)
+                : buildPrompt(enriched) + juce::String::fromUTF8("\n\nTu respuesta anterior no fue JSON válido. Responde SOLO el objeto JSON, sin nada más.");
         juce::String endpoint;
         juce::String postData;
         juce::String authHeader;
@@ -334,7 +528,8 @@ void AIService::requestRecommendationsAsync(
 
         if (provider == AIProvider::Gemini)
         {
-            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + apiKey;
+            // ponytail: modelo configurable por usuario; Google depreca IDs seguido, no quemar literales aquí
+            endpoint = "https://generativelanguage.googleapis.com/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
 
             // Gemini payload
             juce::var partsArray;
@@ -351,6 +546,7 @@ void AIService::requestRecommendationsAsync(
 
             juce::var genConfig(new juce::DynamicObject());
             genConfig.getDynamicObject()->setProperty("responseMimeType", "application/json");
+            genConfig.getDynamicObject()->setProperty("maxOutputTokens", 1024); // 5 recs + margen anti-truncado
             payload.getDynamicObject()->setProperty("generationConfig", genConfig);
         }
         else if (provider == AIProvider::OpenAI)
@@ -358,7 +554,7 @@ void AIService::requestRecommendationsAsync(
             endpoint = "https://api.openai.com/v1/chat/completions";
             authHeader = "-H \"Authorization: Bearer " + apiKey + "\"";
 
-            payload.getDynamicObject()->setProperty("model", "gpt-4o-mini");
+            payload.getDynamicObject()->setProperty("model", modelName);
 
             juce::var messagesArray;
             juce::var msgObj(new juce::DynamicObject());
@@ -371,13 +567,15 @@ void AIService::requestRecommendationsAsync(
             juce::var respFmt(new juce::DynamicObject());
             respFmt.getDynamicObject()->setProperty("type", "json_object");
             payload.getDynamicObject()->setProperty("response_format", respFmt);
+            payload.getDynamicObject()->setProperty("max_tokens", 800);
+            payload.getDynamicObject()->setProperty("temperature", 0);
         }
         else if (provider == AIProvider::DeepSeek)
         {
             endpoint = "https://api.deepseek.com/chat/completions";
             authHeader = "-H \"Authorization: Bearer " + apiKey + "\"";
 
-            payload.getDynamicObject()->setProperty("model", "deepseek-chat");
+            payload.getDynamicObject()->setProperty("model", modelName);
 
             juce::var messagesArray;
             juce::var msgObj(new juce::DynamicObject());
@@ -390,13 +588,15 @@ void AIService::requestRecommendationsAsync(
             juce::var respFmt(new juce::DynamicObject());
             respFmt.getDynamicObject()->setProperty("type", "json_object");
             payload.getDynamicObject()->setProperty("response_format", respFmt);
+            payload.getDynamicObject()->setProperty("max_tokens", 800);
+            payload.getDynamicObject()->setProperty("temperature", 0);
         }
         else if (provider == AIProvider::Claude)
         {
             endpoint = "https://api.anthropic.com/v1/messages";
             authHeader = "-H \"x-api-key: " + apiKey + "\" -H \"anthropic-version: 2023-06-01\"";
 
-            payload.getDynamicObject()->setProperty("model", "claude-3-5-haiku-20241022");
+            payload.getDynamicObject()->setProperty("model", modelName);
             payload.getDynamicObject()->setProperty("max_tokens", 1024);
 
             juce::var messagesArray;
@@ -406,6 +606,27 @@ void AIService::requestRecommendationsAsync(
             messagesArray.append(msgObj);
 
             payload.getDynamicObject()->setProperty("messages", messagesArray);
+        }
+        else if (provider == AIProvider::OpenRouter)
+        {
+            // API compatible con OpenAI; sin response_format (algunos modelos free devuelven 400).
+            // El salvamento por llaves de parseResponse cubre el formato.
+            endpoint = "https://openrouter.ai/api/v1/chat/completions";
+            authHeader = "-H \"Authorization: Bearer " + apiKey + "\""
+                       + " -H \"HTTP-Referer: https://discnativepro.app\""
+                       + " -H \"X-Title: DiscNativePro\"";
+
+            payload.getDynamicObject()->setProperty("model", modelName);
+
+            juce::var orMessages;
+            juce::var orMsg(new juce::DynamicObject());
+            orMsg.getDynamicObject()->setProperty("role", "user");
+            orMsg.getDynamicObject()->setProperty("content", promptText);
+            orMessages.append(orMsg);
+
+            payload.getDynamicObject()->setProperty("messages", orMessages);
+            payload.getDynamicObject()->setProperty("max_tokens", 1024);
+            payload.getDynamicObject()->setProperty("temperature", 0);
         }
 
         postData = juce::JSON::toString(payload);
@@ -432,21 +653,85 @@ void AIService::requestRecommendationsAsync(
             respFile.deleteFile();
         }
 
-        juce::String parseError;
-        std::vector<AIRecommendation> recs;
-        if (rawResponse.isNotEmpty())
+        if (rawResponse.isEmpty())
         {
-            recs = parseResponse(provider, rawResponse, parseError);
+            parseError = juce::String::fromUTF8("No hubo respuesta del servidor o tiempo de espera agotado.");
+            break;
         }
-        else
+
         {
-            parseError = "No hubo respuesta del servidor o tiempo de espera agotado.";
+            // Distinguir error de API (key/créditos/rate-limit: no tiene sentido reintentar)
+            // de formato inválido (reintentable con auto-reparación).
+            auto envelope = juce::JSON::parse(rawResponse);
+            apiError = envelope.isObject()
+                && (envelope.hasProperty("error") || envelope["type"].toString() == "error");
+            if (apiError)
+            {
+                parseResponse(provider, rawResponse, parseError); // extrae el mensaje de la API
+                break;
+            }
         }
+#if JUCE_DEBUG
+        {
+            auto dumpFile = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+                                .getChildFile("DiscNativePro")
+                                .getChildFile("ai_last_response.json");
+            dumpFile.replaceWithText(rawResponse);
+            DBG("AI-Match: respuesta cruda en " << dumpFile.getFullPathName());
+        }
+#endif
+        recs = parseResponse(provider, rawResponse, parseError);
+        } // for attempt
+
+        if (recs.empty() && enriched.audienceAlsoPlays.size() > 0)
+        {
+            // Fallback determinístico cero-IA desde Up Next: nunca pantalla roja
+            // si hay señal de audiencia (funciona incluso sin key/créditos).
+            recs = buildCrowdFallback(enriched);
+            parseError = {};
+        }
+        DBG("AI-Match: total " << (juce::Time::getMillisecondCounter() - t0) << " ms (" << recs.size() << " recs)");
 
         juce::MessageManager::callAsync([onComplete, recs, parseError]() {
             onComplete(recs, parseError);
         });
     }).detach();
+}
+
+std::vector<AIRecommendation> AIService::buildCrowdFallback(const CurrentTrackContext& context)
+{
+    std::vector<AIRecommendation> list;
+
+    for (int i = 0; i < context.audienceAlsoPlays.size() && (int)list.size() < 5; ++i)
+    {
+        auto entry = context.audienceAlsoPlays[i].trim();
+        if (entry.isEmpty())
+            continue;
+
+        AIRecommendation rec;
+        int sep = entry.indexOf(juce::String::fromUTF8(" — "));
+        if (sep > 0)
+        {
+            // getRelatedVideos guarda "título — canal"
+            rec.title = entry.substring(0, sep).trim();
+            rec.artist = entry.substring(sep + 3).trim();
+        }
+        else
+        {
+            rec.title = entry;
+        }
+
+        if (rec.title.isEmpty())
+            continue;
+
+        rec.matchType = "crowd";
+        rec.known = true; // picks reales de audiencia, no invento del modelo
+        rec.reason = LanguageManager::trUtf8("La audiencia de este video también mezcla esta pista.",
+                                            "Audience of this video also mixes this track.");
+        list.push_back(rec);
+    }
+
+    return list;
 }
 
 void AIService::resolveLocalMatches(std::vector<AIRecommendation>& recs,

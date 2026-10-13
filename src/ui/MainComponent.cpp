@@ -2,11 +2,13 @@
 #include "MidiModalComponent.h"
 #include "SettingsModalComponent.h"
 #include "CoverArtGenerator.h"
+#include "../services/LanguageManager.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 MainComponent::MainComponent()
     : midiManager(audioEngine),
       fxPanel(audioEngine.getMixer()),
+      stemsPanel(audioEngine.getMixer()),
       deck1(0, audioEngine.getDeck(0), juce::Colour::fromRGB(0, 180, 216)),
       deck2(1, audioEngine.getDeck(1), juce::Colour::fromRGB(148, 163, 184)),
       mixer(audioEngine),
@@ -33,9 +35,9 @@ MainComponent::MainComponent()
             {
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::AlertWindow::InfoIcon,
-                    "Grabacion Guardada",
-                    "Sesion de mezcla guardada con exito en:\n\n" + outPath
-                    + "\n\nPuedes abrir la carpeta desde Preferencias > General.");
+                    LanguageManager::trUtf8("Grabación Guardada", "Recording Saved"),
+                    LanguageManager::trUtf8("Sesión de mezcla guardada con éxito en:\n\n", "Mix session successfully saved to:\n\n") + outPath
+                    + LanguageManager::trUtf8("\n\nPuedes abrir la carpeta desde Preferencias > General.", "\n\nYou can open the folder from Preferences > General."));
             }
         }
     };
@@ -45,6 +47,14 @@ MainComponent::MainComponent()
         isFxPanelVisible = !isFxPanelVisible;
         topBar.setFxActive(isFxPanelVisible);
         fxPanel.setVisible(isFxPanelVisible);
+        resized();
+    };
+
+    // STEMS Panel toggle (EQ kills por deck)
+    topBar.onStemsClicked = [this]() {
+        isStemsPanelVisible = !isStemsPanelVisible;
+        topBar.setStemsActive(isStemsPanelVisible);
+        stemsPanel.setVisible(isStemsPanelVisible);
         resized();
     };
 
@@ -61,32 +71,15 @@ MainComponent::MainComponent()
 
     // Preferences modal
     topBar.onSettingsClicked = [this]() {
-        if (settingsWindow != nullptr)
-        {
-            settingsWindow->toFront(true);
-            return;
-        }
-        auto* modal = new SettingsModalComponent(audioEngine, midiManager);
-        juce::DialogWindow::LaunchOptions opt;
-        opt.dialogTitle = "Preferencias de DiscNativePro";
-        opt.dialogBackgroundColour = juce::Colour::fromRGB(26, 29, 38);
-        opt.content.setOwned(modal);
-        opt.resizable = false;
-        opt.useNativeTitleBar = true;
-        opt.escapeKeyTriggersCloseButton = true;
-        settingsWindow = opt.launchAsync();
-
-        modal->onClose = [this]() {
-            if (settingsWindow != nullptr)
-            {
-                settingsWindow->closeButtonPressed();
-            }
-        };
+        openSettings(0);
     };
 
     addChildComponent(fxPanel);
     fxPanel.setVisible(isFxPanelVisible);
     topBar.setFxActive(isFxPanelVisible);
+    addChildComponent(stemsPanel);
+    stemsPanel.setVisible(isStemsPanelVisible);
+    topBar.setStemsActive(isStemsPanelVisible);
     addAndMakeVisible(topBar);
     addAndMakeVisible(deck1);
     addAndMakeVisible(mixer);
@@ -121,9 +114,8 @@ MainComponent::MainComponent()
     library.onStopAutomix = [this]() {
         stopAutomix();
     };
-    library.onOpenSettings = [this]() {
-        if (topBar.onSettingsClicked)
-            topBar.onSettingsClicked();
+    library.onOpenSettings = [this](int targetTab) {
+        openSettings(targetTab);
     };
 
     // Connect MIDI hardware browser and deck loader
@@ -227,6 +219,7 @@ void MainComponent::timerCallback()
             ctx.bpm = activeDeckComp.getBpm();
             ctx.key = activeDeckComp.getTrackKey();
             ctx.isVideo = activeDeckComp.isVideoModeActive();
+            ctx.videoId = activeDeckComp.getVideoId();
             library.updateActiveTrackContext(ctx);
         }
     }
@@ -354,6 +347,12 @@ void MainComponent::resized()
         fxPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
     }
 
+    // 3b. Optional STEMS Strip (54px) above Library
+    if (isStemsPanelVisible)
+    {
+        stemsPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
+    }
+
     // 4. Center workspace: Deck 1 (left), Center Mixer, Deck 2 (right)
     area.reduce(6, 4);
     int mixerWidth = 430; // 96px Ch1 + 238px Center + 96px Ch2
@@ -454,4 +453,33 @@ void MainComponent::automixAdvance()
     automixTransitioning = true;
     automixActiveDeck = nextDeck;
     automixCurrentIndex = nextTrackIndex;
+}
+
+void MainComponent::openSettings(int targetTab)
+{
+    if (settingsWindow != nullptr)
+    {
+        if (auto* content = dynamic_cast<SettingsModalComponent*>(settingsWindow->getContentComponent()))
+            content->setActiveTab(targetTab);
+
+        settingsWindow->toFront(true);
+        return;
+    }
+
+    auto* modal = new SettingsModalComponent(audioEngine, midiManager, targetTab);
+    juce::DialogWindow::LaunchOptions opt;
+    opt.dialogTitle = LanguageManager::trUtf8("Preferencias de DiscNativePro", "DiscNativePro Preferences");
+    opt.dialogBackgroundColour = juce::Colour::fromRGB(26, 29, 38);
+    opt.content.setOwned(modal);
+    opt.resizable = false;
+    opt.useNativeTitleBar = true;
+    opt.escapeKeyTriggersCloseButton = true;
+    settingsWindow = opt.launchAsync();
+
+    modal->onClose = [this]() {
+        if (settingsWindow != nullptr)
+        {
+            settingsWindow->closeButtonPressed();
+        }
+    };
 }

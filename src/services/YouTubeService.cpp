@@ -2,6 +2,9 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <mutex>
+#include <map>
 
 #if JUCE_WINDOWS
 #define popen _popen
@@ -58,6 +61,33 @@ void YouTubeService::setApiKey(const juce::String& key)
 bool YouTubeService::hasApiKey()
 {
     return getApiKey().isNotEmpty();
+}
+
+bool YouTubeService::isVideoAutoplayEnabled()
+{
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject() && json.hasProperty("youtubeAutoplay"))
+            return (bool)json["youtubeAutoplay"];
+    }
+    return true; // default ON: conserva el comportamiento actual
+}
+
+void YouTubeService::setVideoAutoplayEnabled(bool enabled)
+{
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+        obj->setProperty("youtubeAutoplay", enabled);
+
+    file.replaceWithText(juce::JSON::toString(json));
 }
 
 juce::String YouTubeService::extractVideoId(const juce::String& input)
@@ -141,6 +171,254 @@ YouTubeSearchResult YouTubeService::getVideoDetails(const juce::String& videoIdO
 
     result.thumbnailUrl = "https://i.ytimg.com/vi/" + vidId + "/mqdefault.jpg";
     return result;
+}
+
+namespace
+{
+// Descarga una página de YouTube (watch o results) con la misma técnica que searchPublic
+juce::String downloadYouTubePage(const juce::String& pageUrl)
+{
+    juce::String html;
+
+#if !JUCE_WINDOWS
+    juce::String cmd = "curl -s -L --max-time 6 "
+                       "-H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' "
+                       "-H 'Accept-Language: es,en-US;q=0.9,en;q=0.8' "
+                       "'" + pageUrl + "'";
+
+    FILE* pipe = popen(cmd.toRawUTF8(), "r");
+    if (pipe != nullptr)
+    {
+        char buffer[16384];
+        std::string outStr;
+        while (size_t bytes = fread(buffer, 1, sizeof(buffer), pipe))
+            outStr.append(buffer, bytes);
+        pclose(pipe);
+        html = juce::String::fromUTF8(outStr.data(), (int)outStr.size());
+    }
+#endif
+
+    if (html.isEmpty())
+    {
+        juce::URL url(pageUrl);
+        juce::String extraHeaders =
+#if JUCE_WINDOWS
+            "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36\r\n"
+#else
+            "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\r\n"
+#endif
+            "Accept-Language: es,en-US;q=0.9,en;q=0.8\r\n";
+
+        std::unique_ptr<juce::InputStream> stream(url.createInputStream(
+            juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                .withConnectionTimeoutMs(8000)
+                .withExtraHeaders(extraHeaders)));
+
+        if (stream != nullptr)
+            html = stream->readEntireStreamAsString();
+    }
+
+    return html;
+}
+
+// Extrae el JSON de ytInitialData del HTML (misma técnica que searchPublic)
+juce::var parseInitialData(const juce::String& html)
+{
+    if (html.isEmpty())
+        return {};
+
+    const char* raw = html.toRawUTF8();
+    const char* pData = strstr(raw, "var ytInitialData = {");
+    if (pData == nullptr)
+        pData = strstr(raw, "ytInitialData = {");
+    if (pData == nullptr)
+        return {};
+
+    const char* pStart = strchr(pData, '{');
+    if (pStart == nullptr)
+        return {};
+
+    const char* pEndTag = strstr(pStart, "</script>");
+    if (pEndTag == nullptr)
+        return {};
+
+    const char* pEnd = pEndTag;
+    while (pEnd > pStart && (*(pEnd - 1) == ';' || *(pEnd - 1) == ' ' || *(pEnd - 1) == '\n' || *(pEnd - 1) == '\r' || *(pEnd - 1) == '\t'))
+        pEnd--;
+
+    if (pEnd <= pStart)
+        return {};
+
+    return juce::JSON::parse(juce::String::fromUTF8(pStart, static_cast<int>(pEnd - pStart)));
+}
+
+juce::String rendererTitle(const juce::var& vr)
+{
+    auto runs = vr["title"]["runs"];
+    if (runs.isArray() && runs.size() > 0)
+        return runs[0]["text"].toString();
+    return vr["title"]["simpleText"].toString();
+}
+
+juce::String rendererChannel(const juce::var& vr)
+{
+    auto byline = vr["longBylineText"]["runs"];
+    if (byline.isArray() && byline.size() > 0)
+        return byline[0]["text"].toString();
+    auto owner = vr["ownerText"]["runs"];
+    if (owner.isArray() && owner.size() > 0)
+        return owner[0]["text"].toString();
+    auto shortByline = vr["shortBylineText"]["runs"];
+    if (shortByline.isArray() && shortByline.size() > 0)
+        return shortByline[0]["text"].toString();
+    return {};
+}
+
+// ponytail: caché de sesión (sin TTL; Up Next es estable durante un set).
+// Evita re-scrapear al regenerar sobre la misma pista.
+struct SignalsCache
+{
+    std::mutex mutex;
+    std::map<std::string, juce::StringArray> related;
+    std::map<std::string, juce::StringArray> tags;
+};
+
+SignalsCache& signalsCache()
+{
+    static SignalsCache cache;
+    return cache;
+}
+} // namespace
+
+juce::StringArray YouTubeService::getRelatedVideos(const juce::String& videoId, int maxResults)
+{
+    juce::StringArray related;
+    auto vid = extractVideoId(videoId);
+    if (vid.isEmpty() || maxResults <= 0)
+        return related;
+
+    {
+        std::lock_guard<std::mutex> lock(signalsCache().mutex);
+        auto it = signalsCache().related.find(vid.toStdString());
+        if (it != signalsCache().related.end())
+        {
+            for (int i = 0; i < it->second.size() && related.size() < maxResults; ++i)
+                related.add(it->second[i]);
+            return related;
+        }
+    }
+
+    auto data = parseInitialData(downloadYouTubePage("https://www.youtube.com/watch?v=" + vid));
+    if (!data.isObject())
+        return related;
+
+    auto results = data["contents"]["twoColumnWatchNextResults"]["secondaryResults"]["secondaryResults"]["results"];
+    if (!results.isArray())
+        return related;
+
+    for (int i = 0; i < results.size() && related.size() < maxResults; ++i)
+    {
+        auto vr = results[i]["compactVideoRenderer"];
+        if (!vr.isObject())
+            continue; // playlists, ads, shorts shelves: se ignoran
+
+        auto title = rendererTitle(vr);
+        if (title.isEmpty())
+            continue;
+
+        auto channel = rendererChannel(vr);
+        related.add(channel.isNotEmpty() ? title + juce::String::fromUTF8(" — ") + channel : title);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(signalsCache().mutex);
+        signalsCache().related[vid.toStdString()] = related;
+    }
+
+    return related;
+}
+
+juce::StringArray YouTubeService::getVideoTags(const juce::String& videoId)
+{
+    juce::StringArray tags;
+    auto vid = extractVideoId(videoId);
+    auto apiKey = getApiKey();
+    if (vid.isEmpty() || apiKey.isEmpty())
+        return tags;
+
+    {
+        std::lock_guard<std::mutex> lock(signalsCache().mutex);
+        auto it = signalsCache().tags.find(vid.toStdString());
+        if (it != signalsCache().tags.end())
+            return it->second;
+    }
+
+    juce::URL url("https://www.googleapis.com/youtube/v3/videos?part=snippet&id=" + vid + "&key=" + apiKey);
+    std::unique_ptr<juce::InputStream> stream(url.createInputStream(
+        juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+            .withConnectionTimeoutMs(8000)));
+    if (stream == nullptr)
+        return tags;
+
+    auto json = juce::JSON::parse(stream->readEntireStreamAsString());
+    if (!json.isObject())
+        return tags;
+
+    auto items = json["items"];
+    if (!items.isArray() || items.size() == 0)
+        return tags;
+
+    auto tagList = items[0]["snippet"]["tags"];
+    if (tagList.isArray())
+    {
+        for (int i = 0; i < tagList.size() && tags.size() < 10; ++i)
+        {
+            auto t = tagList[i].toString().trim();
+            if (t.isNotEmpty())
+                tags.add(t);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(signalsCache().mutex);
+        signalsCache().tags[vid.toStdString()] = tags;
+    }
+
+    return tags;
+}
+
+YouTubeService::AudienceSignals YouTubeService::getAudienceSignals(const juce::String& videoId)
+{
+    AudienceSignals signals;
+
+    // Related (scrape ≤6s) y tags (API ≤8s) son independientes: en paralelo
+    std::thread relatedThread([&signals, videoId]() {
+        signals.related = getRelatedVideos(videoId, 8);
+    });
+    std::thread tagsThread([&signals, videoId]() {
+        signals.tags = getVideoTags(videoId);
+    });
+    relatedThread.join();
+    tagsThread.join();
+
+    return signals;
+}
+
+void YouTubeService::prefetchAudienceSignals(const juce::String& videoId)
+{
+    auto vid = extractVideoId(videoId);
+    if (vid.isEmpty())
+        return;
+
+    {
+        std::lock_guard<std::mutex> lock(signalsCache().mutex);
+        if (signalsCache().related.find(vid.toStdString()) != signalsCache().related.end())
+            return; // ya en caché: evita spawn de hilos en cada tick de 0.5s
+    }
+
+    juce::Thread::launch([vid]() {
+        getAudienceSignals(vid);
+    });
 }
 
 std::vector<YouTubeSearchResult> YouTubeService::search(const juce::String& query)

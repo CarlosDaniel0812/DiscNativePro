@@ -23,6 +23,10 @@ public:
     static void setApiKey(const juce::String& key);
     static bool hasApiKey();
 
+    // Reproducción automática al cargar un video en bandeja (default: true)
+    static bool isVideoAutoplayEnabled();
+    static void setVideoAutoplayEnabled(bool enabled);
+
     // Synchronous search (safe to call on background thread)
     static std::vector<YouTubeSearchResult> search(const juce::String& query);
 
@@ -32,6 +36,25 @@ public:
 
     // Fast details lookup from direct ID / URL
     static YouTubeSearchResult getVideoDetails(const juce::String& videoIdOrUrl);
+
+    // "Up Next" de la watch page: lo que la audiencia ve junto a este video.
+    // Scrape (la API oficial ya no expone relacionados). Devuelve "Título — Canal".
+    static juce::StringArray getRelatedVideos(const juce::String& videoId, int maxResults = 8);
+
+    // Tags oficiales via videos.list (vacío sin API key o si falla)
+    static juce::StringArray getVideoTags(const juce::String& videoId);
+
+    struct AudienceSignals
+    {
+        juce::StringArray related;
+        juce::StringArray tags;
+    };
+
+    // Related + tags en paralelo con caché de sesión. Llamar desde hilo de fondo.
+    static AudienceSignals getAudienceSignals(const juce::String& videoId);
+
+    // Precarga fire-and-forget (llamar al cambiar de pista; no hace nada si ya está en caché)
+    static void prefetchAudienceSignals(const juce::String& videoId);
 
 private:
     static std::vector<YouTubeSearchResult> searchPublic(const juce::String& query);

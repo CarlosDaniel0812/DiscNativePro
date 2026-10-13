@@ -1,5 +1,6 @@
 #include "AIMatchView.h"
 #include "CoverArtGenerator.h"
+#include "../services/YouTubeService.h"
 
 class RecommendationCardComponent : public juce::Component
 {
@@ -14,7 +15,7 @@ public:
     {
         if (rec.isLocal)
         {
-            actionButton.setText("Cargar Deck " + juce::String(targetDeck + 1));
+            actionButton.setText(LanguageManager::trUtf8("Cargar Deck ", "Load Deck ") + juce::String(targetDeck + 1));
             actionButton.setIcon(LucideIcons::IconType::Music, 11.0f);
             actionButton.setCustomColours(juce::Colour::fromRGB(16, 185, 129),
                                           juce::Colours::white,
@@ -27,7 +28,7 @@ public:
         }
         else
         {
-            actionButton.setText("Buscar en YouTube");
+            actionButton.setText(LanguageManager::trUtf8("Buscar en YouTube", "Search YouTube"));
             actionButton.setIcon(LucideIcons::IconType::Tv, 11.0f);
             actionButton.setCustomColours(juce::Colour::fromRGB(220, 38, 38),
                                           juce::Colours::white,
@@ -83,7 +84,7 @@ public:
         g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
         juce::String fullTitle = recommendation.title;
         if (recommendation.artist.isNotEmpty())
-            fullTitle += " — " + recommendation.artist;
+            fullTitle += juce::String::fromUTF8(" — ") + recommendation.artist;
         g.drawText(fullTitle, titleRect, juce::Justification::centredLeft, true);
 
         // 3. Badges Row (Genre, BPM, Key, Source)
@@ -128,13 +129,34 @@ public:
                       juce::Colour::fromRGB(52, 211, 153), 48.0f);
         }
 
+        // Señal de afinidad: lo que más importa (género/crowd) va primero visualmente
+        auto mt = recommendation.matchType.toLowerCase().trim();
+        if (mt == "crowd")
+        {
+            drawBadge("CROWD",
+                      juce::Colour::fromRGB(120, 53, 15).withAlpha(0.45f),
+                      juce::Colour::fromRGB(251, 191, 36), 52.0f);
+        }
+        else if (mt == "harmonic")
+        {
+            drawBadge(LanguageManager::trUtf8("ARMONÍA", "HARMONY"),
+                      juce::Colour::fromRGB(30, 58, 138).withAlpha(0.4f),
+                      juce::Colour::fromRGB(96, 165, 250), 62.0f);
+        }
+        else
+        {
+            drawBadge(LanguageManager::trUtf8("GÉNERO", "GENRE"),
+                      juce::Colour::fromRGB(55, 48, 163).withAlpha(0.35f),
+                      juce::Colour::fromRGB(192, 132, 252), 56.0f);
+        }
+
         // 4. Reason Subtitle
         if (recommendation.reason.isNotEmpty())
         {
             auto reasonRect = textRect;
             g.setColour(juce::Colour::fromRGB(142, 149, 165));
             g.setFont(juce::FontOptions(10.5f, juce::Font::italic));
-            g.drawText(juce::String::fromUTF8("✨ ") + recommendation.reason,
+            g.drawText(recommendation.reason,
                        reasonRect, juce::Justification::centredLeft, true);
         }
     }
@@ -226,13 +248,41 @@ AIMatchView::AIMatchView()
     viewport.setViewedComponent(listContainer.get(), false);
     viewport.setScrollBarsShown(true, false);
     addAndMakeVisible(viewport);
+
+    LanguageManager::getInstance().addListener(this);
+    refreshLanguage();
 }
 
-AIMatchView::~AIMatchView() = default;
+AIMatchView::~AIMatchView()
+{
+    LanguageManager::getInstance().removeListener(this);
+}
+
+void AIMatchView::languageChanged()
+{
+    refreshLanguage();
+}
+
+void AIMatchView::refreshLanguage()
+{
+    refreshButton.setText(LanguageManager::trUtf8("Generar Recomendaciones", "Generate Recommendations"));
+    settingsShortcutButton.setText(LanguageManager::trUtf8("Configurar IA", "Configure AI"));
+    updateCardList();
+    repaint();
+}
 
 void AIMatchView::updateActiveTrack(const CurrentTrackContext& ctx)
 {
     currentContext = ctx;
+
+    // Precarga de señal de audiencia al cambiar de video: cuando el usuario
+    // pulse Generar, el contexto suele estar ya en caché (updateActiveTrack late ~0.5s)
+    if (ctx.isVideo && ctx.videoId.isNotEmpty() && ctx.videoId != lastPrefetchedVideoId)
+    {
+        lastPrefetchedVideoId = ctx.videoId;
+        YouTubeService::prefetchAudienceSignals(ctx.videoId);
+    }
+
     repaint();
 }
 
@@ -245,7 +295,9 @@ void AIMatchView::refreshRecommendations()
 {
     if (!AIService::isEnabled() || !AIService::isConfigured())
     {
-        errorMessage = "La Inteligencia Artificial no está configurada o activada. Configura tu API Key en Ajustes.";
+        errorMessage = LanguageManager::trUtf8("La Inteligencia Artificial no está configurada o activada. Configura tu API Key en Ajustes.",
+                                               "AI is not configured or enabled. Configure your API Key in Settings.");
+        resultsUncertain = false;
         listContainer->clear();
         repaint();
         return;
@@ -253,7 +305,9 @@ void AIMatchView::refreshRecommendations()
 
     if (currentContext.title.isEmpty() && currentContext.artist.isEmpty())
     {
-        errorMessage = "Carga y reproduce una pista primero en cualquier bandeja para generar recomendaciones.";
+        errorMessage = LanguageManager::trUtf8("Carga y reproduce una pista primero en cualquier bandeja para generar recomendaciones.",
+                                               "Load and play a track first on any deck to generate recommendations.");
+        resultsUncertain = false;
         listContainer->clear();
         repaint();
         return;
@@ -261,7 +315,8 @@ void AIMatchView::refreshRecommendations()
 
     isLoading = true;
     errorMessage = {};
-    statusMessage = "Analizando pista y generando mezclas armónicas...";
+    statusMessage = LanguageManager::trUtf8("Analizando pista y generando mezclas armónicas...",
+                                           "Analyzing track and generating harmonic transitions...");
     listContainer->clear();
     repaint();
 
@@ -270,13 +325,23 @@ void AIMatchView::refreshRecommendations()
         if (err.isNotEmpty() && recs.empty())
         {
             errorMessage = err;
+            resultsUncertain = false;
             repaint();
             return;
         }
 
         recommendations = recs;
-        // Resolve hybrid matching against local tracks
+        // Solo marca LOCAL como badge; el orden del modelo manda (género/crowd primero)
         AIService::resolveLocalMatches(recommendations, localFiles);
+        resultsUncertain = !recommendations.empty();
+        for (const auto& r : recommendations)
+        {
+            if (r.known)
+            {
+                resultsUncertain = false;
+                break;
+            }
+        }
         updateCardList();
         repaint();
     });
@@ -316,7 +381,7 @@ void AIMatchView::paint(juce::Graphics& g)
     auto infoArea = headerRect.reduced(10.0f, 6.0f);
     infoArea.removeFromRight(280.0f); // Space for buttons
 
-    juce::String contextText = "Pista Activa: ";
+    juce::String contextText = LanguageManager::trUtf8("Pista Activa: ", "Active Track: ");
     if (currentContext.title.isNotEmpty())
     {
         contextText << "\"" << currentContext.title << "\"";
@@ -331,8 +396,11 @@ void AIMatchView::paint(juce::Graphics& g)
     }
     else
     {
-        contextText << "Ninguna (Reproduce en Deck 1 o Deck 2)";
+        contextText << LanguageManager::trUtf8("Ninguna (Reproduce en Deck 1 o Deck 2)", "None (Play on Deck 1 or Deck 2)");
     }
+
+    if (resultsUncertain && !recommendations.empty())
+        contextText << LanguageManager::trUtf8("  •  track poco conocido (por género)", "  •  less known track (by genre)");
 
     g.setColour(juce::Colour::fromRGB(192, 132, 252));
     LucideIcons::draw(g, LucideIcons::IconType::Sparkles,
@@ -364,7 +432,8 @@ void AIMatchView::paint(juce::Graphics& g)
         auto center = getLocalBounds().reduced(20).withTrimmedTop(36);
         g.setColour(juce::Colour::fromRGB(142, 149, 165));
         g.setFont(juce::FontOptions(12.5f, juce::Font::plain));
-        g.drawText("Haz clic en 'Generar Recomendaciones ✨' para obtener mezclas sugeridas por IA.",
+        g.drawText(LanguageManager::trUtf8("Haz clic en 'Generar Recomendaciones' para obtener mezclas sugeridas por IA.",
+                                           "Click 'Generate Recommendations' to get AI suggested transitions."),
                    center, juce::Justification::centred, false);
     }
 }

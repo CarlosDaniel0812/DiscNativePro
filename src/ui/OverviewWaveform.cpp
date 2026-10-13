@@ -12,10 +12,21 @@ OverviewWaveform::~OverviewWaveform()
 
 void OverviewWaveform::seekToMouse(float mouseX)
 {
-    double dur = deck.getLengthInSeconds();
-    if (dur > 0.0 && getWidth() > 0)
+    if (getWidth() <= 0)
+        return;
+
+    float norm = juce::jlimit(0.0f, 1.0f, mouseX / (float)getWidth());
+    if (isVideoProgressActive())
     {
-        float norm = juce::jlimit(0.0f, 1.0f, mouseX / (float)getWidth());
+        if (onVideoSeek)
+            onVideoSeek((double)norm * videoDur);
+        repaint();
+        return;
+    }
+
+    double dur = deck.getLengthInSeconds();
+    if (dur > 0.0)
+    {
         deck.setPosition((double)norm * dur);
         repaint();
     }
@@ -55,8 +66,22 @@ void OverviewWaveform::paint(juce::Graphics& g)
     g.drawHorizontalLine((int)halfHeight, bounds.getX(), bounds.getRight());
 
     double dur = deck.getLengthInSeconds();
-    if (!deck.isLoaded() || dur <= 0.0)
+    if ((!deck.isLoaded() || dur <= 0.0) && !isVideoProgressActive())
     {
+        return;
+    }
+
+    if (isVideoProgressActive())
+    {
+        // Barra de progreso plana para video YouTube (sin picos locales):
+        // tramo reproducido en acento tenue + aguja.
+        float playedX = (float)(videoPos / videoDur) * width;
+        g.setColour(accent.withAlpha(0.35f));
+        g.fillRoundedRectangle(0.0f, 0.0f, playedX, height, 4.0f);
+        g.setColour(juce::Colour::fromRGB(255, 51, 75).withAlpha(0.4f));
+        g.drawLine(playedX, 0.0f, playedX, height, 4.0f);
+        g.setColour(juce::Colour::fromRGB(255, 51, 75));
+        g.drawLine(playedX, 0.0f, playedX, height, 1.5f);
         return;
     }
 

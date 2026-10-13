@@ -32,7 +32,11 @@ public:
         Search,
         CircleDot,
         Layers,
-        Keyboard
+        Keyboard,
+        Coffee,
+        Usb,
+        SoundCloud,
+        YouTube
     };
 
     // Draw the icon vector scaled into the destination rectangle

@@ -193,14 +193,7 @@ void JogWheel::paint(juce::Graphics& g)
                 g.fillAll();
             }
 
-            // DiscPro Center Branding
-            g.setColour(juce::Colours::white.withAlpha(0.95f));
-            g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-            g.drawText("DiscPro",
-                       juce::Rectangle<float>(center.x - labelRadius, center.y - 17.0f, labelDia, 13.0f),
-                       juce::Justification::centred, false);
-
-            // Color bar separator
+            // Color bar separator (ponytail: branding text removed — DiscNativePro too long for 60px sticker)
             g.setColour(accent);
             g.fillRoundedRectangle(center.x - 12.0f, center.y - 2.5f, 24.0f, 2.0f, 1.0f);
 

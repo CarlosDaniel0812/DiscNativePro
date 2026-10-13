@@ -2,9 +2,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../midi/MidiManager.h"
+#include "../services/LanguageManager.h"
 #include "LucideIcons.h"
 
-class MidiModalComponent : public juce::Component
+class MidiModalComponent : public juce::Component,
+                           public LanguageManager::Listener
 {
 public:
     MidiModalComponent(MidiManager& midiMgr);
@@ -12,6 +14,8 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void languageChanged() override;
+    void refreshLanguage();
 
 private:
     void refreshDeviceList();

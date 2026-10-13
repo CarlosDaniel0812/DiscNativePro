@@ -13,7 +13,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
-    void loadVideo(const juce::String& videoId, const juce::String& title = {});
+    void loadVideo(const juce::String& videoId, const juce::String& title = {}, bool autoplay = true);
     void play();
     void pause();
     void seekTo(double seconds);
@@ -25,7 +25,6 @@ public:
     float getVolume() const { return currentVolume; }
 
 private:
-    int deckIndex;
     juce::String currentVideoId;
     juce::String currentVideoTitle;
     float currentVolume { 1.0f };

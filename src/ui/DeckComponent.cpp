@@ -3,6 +3,7 @@
 #include "../services/YouTubeService.h"
 #include <cstdio>
 #include <cmath>
+#include <thread>
 
 DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accentColour)
     : deckIndex(deckNum), deck(player), accent(accentColour),
@@ -11,8 +12,8 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
 {
     pitchSlider.setLookAndFeel(&djLookAndFeel);
 
-    juce::String initialTitle = (deckIndex == 0) ? "Bandeja 1" : "Bandeja 2";
-    juce::String initialArtist = "Sin pista cargada";
+    juce::String initialTitle = LanguageManager::trUtf8("Bandeja ", "Deck ") + juce::String(deckIndex + 1);
+    juce::String initialArtist = LanguageManager::trUtf8("Sin pista cargada", "No track loaded");
     double initialBpm = 0.0;
 
     coverArtImage = CoverArtGenerator::getCoverForTrack(initialTitle, 256);
@@ -52,6 +53,7 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
 
     // Overview Waveform
     addAndMakeVisible(overviewWaveform);
+    overviewWaveform.onVideoSeek = [this](double seconds) { seekVideo(seconds); };
 
     // Pitch Section Controls
     syncButton.setText("SYNC");
@@ -214,13 +216,28 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
     };
     addAndMakeVisible(loopNextButton);
 
+    LanguageManager::getInstance().addListener(this);
     startTimerHz(60);
 }
 
 DeckComponent::~DeckComponent()
 {
+    LanguageManager::getInstance().removeListener(this);
     stopTimer();
     pitchSlider.setLookAndFeel(nullptr);
+}
+
+void DeckComponent::languageChanged()
+{
+    if (!isLoaded())
+    {
+        juce::String initialTitle = LanguageManager::trUtf8("Bandeja ", "Deck ") + juce::String(deckIndex + 1);
+        juce::String initialArtist = LanguageManager::trUtf8("Sin pista cargada", "No track loaded");
+        titleLabel.setText(initialTitle, juce::dontSendNotification);
+        artistLabel.setText(initialArtist, juce::dontSendNotification);
+        jogWheel.setTrackInfo(initialTitle, 0.0, accent);
+    }
+    repaint();
 }
 
 void DeckComponent::loadAudioFile(const juce::File& file)
@@ -229,6 +246,11 @@ void DeckComponent::loadAudioFile(const juce::File& file)
     {
         isVideoMode = false;
         isVideoPlaying = false;
+        loadedVideoId.clear();
+        videoPositionSeconds = 0.0;
+        videoDurationSeconds = 0.0;
+        overviewWaveform.setVideoMode(false);
+        overviewWaveform.setVideoProgress(0.0, 0.0);
         if (videoPlayer != nullptr)
         {
             videoPlayer->pause();
@@ -237,8 +259,17 @@ void DeckComponent::loadAudioFile(const juce::File& file)
         jogWheel.setVisible(true);
 
         auto cleanTitle = deck.getTrackTitle().replaceCharacter('_', ' ');
+        auto trackArtist = deck.getTrackArtist();
+        // ponytail: sin metadata, partir "Artista - Título" del filename antes que "Artista Local"
+        juce::String splitArtist, splitTitle;
+        if ((trackArtist.isEmpty() || trackArtist == "Artista Local" || trackArtist == "Local Artist")
+            && splitArtistTitle(cleanTitle, splitArtist, splitTitle))
+        {
+            trackArtist = splitArtist;
+            cleanTitle = splitTitle;
+        }
         titleLabel.setText(cleanTitle, juce::dontSendNotification);
-        artistLabel.setText(deck.getTrackArtist(), juce::dontSendNotification);
+        artistLabel.setText(trackArtist, juce::dontSendNotification);
         double bpm = deck.getBpm();
         bpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
         pitchBpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
@@ -271,18 +302,24 @@ bool DeckComponent::isInterestedInFileDrag(const juce::StringArray& files)
 void DeckComponent::fileDragEnter(const juce::StringArray&, int, int)
 {
     isDragOver = true;
+    if (!isVideoMode)
+        jogWheel.setVisible(false);
     repaint();
 }
 
 void DeckComponent::fileDragExit(const juce::StringArray&)
 {
     isDragOver = false;
+    if (!isVideoMode)
+        jogWheel.setVisible(true);
     repaint();
 }
 
 void DeckComponent::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/)
 {
     isDragOver = false;
+    if (!isVideoMode)
+        jogWheel.setVisible(true);
     for (const auto& f : files)
     {
         juce::File file(f);
@@ -303,18 +340,24 @@ bool DeckComponent::isInterestedInDragSource(const SourceDetails& dragSourceDeta
 void DeckComponent::itemDragEnter(const SourceDetails&)
 {
     isDragOver = true;
+    if (!isVideoMode)
+        jogWheel.setVisible(false);
     repaint();
 }
 
 void DeckComponent::itemDragExit(const SourceDetails&)
 {
     isDragOver = false;
+    if (!isVideoMode)
+        jogWheel.setVisible(true);
     repaint();
 }
 
 void DeckComponent::itemDropped(const SourceDetails& dragSourceDetails)
 {
     isDragOver = false;
+    if (!isVideoMode)
+        jogWheel.setVisible(true);
     juce::String desc = dragSourceDetails.description.toString();
     if (desc.startsWith("yt:"))
     {
@@ -337,8 +380,15 @@ void DeckComponent::itemDropped(const SourceDetails& dragSourceDetails)
 
 void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
 {
+    const bool autoplay = YouTubeService::isVideoAutoplayEnabled();
     isVideoMode = true;
-    isVideoPlaying = false;
+    isVideoPlaying = autoplay; // consistente con lo que el embed va a hacer
+    loadedVideoId = result.id;
+    videoPositionSeconds = 0.0;
+    videoDurationSeconds = result.durationSeconds > 0 ? (double)result.durationSeconds : 0.0;
+    videoLastTickMs = juce::Time::getMillisecondCounter();
+    overviewWaveform.setVideoMode(true);
+    overviewWaveform.setVideoProgress(0.0, videoDurationSeconds);
     deck.stop();
 
     if (videoPlayer == nullptr)
@@ -347,20 +397,112 @@ void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
         addAndMakeVisible(*videoPlayer);
     }
 
-    videoPlayer->loadVideo(result.id, result.title);
+    videoPlayer->loadVideo(result.id, result.title, autoplay);
     videoPlayer->setVisible(true);
     jogWheel.setVisible(false);
 
     auto displayTitle = result.title.isNotEmpty() ? result.title : ("YouTube Video (" + result.id + ")");
+    auto displayArtist = result.artist.isNotEmpty() ? result.artist : "YouTube DJ";
+    // Muchos títulos de YouTube vienen como "Artista - Título (Official Video)".
+    // Se adopta el prefijo aunque haya artista: el canal-uploader rara vez es el artista real.
+    juce::String splitArtist, splitTitle;
+    if (splitArtistTitle(displayTitle, splitArtist, splitTitle)
+        && (displayArtist == "YouTube DJ" || displayArtist == "YouTube" || displayArtist == "YouTube Creator"
+            || displayArtist.isEmpty() || !splitArtist.equalsIgnoreCase(displayArtist)))
+    {
+        displayArtist = splitArtist;
+        displayTitle = splitTitle;
+    }
     titleLabel.setText(displayTitle, juce::dontSendNotification);
-    artistLabel.setText(result.artist.isNotEmpty() ? result.artist : "YouTube DJ", juce::dontSendNotification);
+    artistLabel.setText(displayArtist, juce::dontSendNotification);
     bpmLabel.setText("128.0", juce::dontSendNotification);
     pitchBpmLabel.setText("128.0", juce::dontSendNotification);
     timeRemainingLabel.setText(result.durationText.isNotEmpty() ? result.durationText : "--:--", juce::dontSendNotification);
     keyBadge.setText("YT", juce::dontSendNotification);
 
+    // Si solo tenemos el ID (drop yt:ID), resolver metadata real sin bloquear
+    if (displayTitle.startsWith("YouTube Video ("))
+        resolveVideoMetadataAsync(result.id);
+
     resized();
     repaint();
+}
+
+bool DeckComponent::splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle)
+{
+    auto t = in.trim();
+    // Quitar coletillas comunes que ensucian el match de género (ignora mayúsculas)
+    static const char* suffixes[] = { " (Official Video)", " (Official Music Video)", " [Official Video]",
+                                      " (Official Audio)", " (Lyric Video)", " (Visualizer)",
+                                      " (Official HD Video)", " (Official Video HD)", " (HD)", " [Official Audio]",
+                                      " (Official Lyric Video)", " (Remastered)", " (Remaster)",
+                                      " (Live)", " (Official Live Video)", nullptr };
+    for (int i = 0; suffixes[i] != nullptr; ++i)
+        t = t.upToLastOccurrenceOf(juce::String::fromUTF8(suffixes[i]), false, true);
+
+    // Separadores artista-título: guion, en-dash (–, típico de YouTube) y em-dash (—)
+    // Nota: se adopta el prefijo como artista aunque haya artista (canal-uploader
+    // como "apple cider" no es el artista real); el género manda sobre la precisión.
+    int sep = t.indexOf(" - ");
+    int sepLen = 3;
+    if (sep < 0)
+    {
+        sep = t.indexOf(juce::String::fromUTF8(" – "));
+        sepLen = 3;
+    }
+    if (sep < 0)
+    {
+        sep = t.indexOf(juce::String::fromUTF8(" — "));
+        sepLen = 3;
+    }
+    if (sep <= 0)
+        return false;
+
+    outArtist = t.substring(0, sep).trim();
+    // Cola "| ..." en vivo: "Song | Live in X" -> "Song"
+    outTitle = t.substring(sep + sepLen).trim();
+    int pipe = outTitle.indexOf(" | ");
+    if (pipe > 0 && outTitle.substring(pipe).toLowerCase().contains("live"))
+        outTitle = outTitle.substring(0, pipe).trim();
+    return outArtist.isNotEmpty() && outTitle.isNotEmpty();
+}
+
+void DeckComponent::resolveVideoMetadataAsync(const juce::String& videoId)
+{
+    if (videoId.isEmpty())
+        return;
+
+    juce::String idCopy = videoId;
+    std::thread([this, idCopy]() {
+        auto details = YouTubeService::getVideoDetails(idCopy);
+        juce::MessageManager::callAsync([this, idCopy, details]() {
+            if (!isVideoMode || loadedVideoId != idCopy)
+                return; // el usuario ya cargó otra cosa
+
+            auto title = details.title;
+            auto artist = details.artist;
+            juce::String splitArtist, splitTitle;
+            if (splitArtistTitle(title, splitArtist, splitTitle)
+                && (artist.isEmpty() || artist == "YouTube" || artist == "YouTube DJ" || artist == "YouTube Creator"
+                    || !splitArtist.equalsIgnoreCase(artist)))
+            {
+                artist = splitArtist;
+                title = splitTitle;
+            }
+            if (title.isNotEmpty() && !title.startsWith("YouTube Video ("))
+                titleLabel.setText(title, juce::dontSendNotification);
+            if (artist.isNotEmpty())
+                artistLabel.setText(artist, juce::dontSendNotification);
+
+            // Actualizar duración real del video y sincronizar la barra de progreso
+            if (details.durationSeconds > 0)
+            {
+                videoDurationSeconds = (double)details.durationSeconds;
+                overviewWaveform.setVideoProgress(videoPositionSeconds, videoDurationSeconds);
+            }
+            repaint();
+        });
+    }).detach();
 }
 
 void DeckComponent::setVideoVolume(float effectiveVolume)
@@ -419,12 +561,24 @@ void DeckComponent::triggerCue()
             deck.pause();
 
         pauseVideo();
-        videoPlayer->seekTo(0.0);
+        seekVideo(0.0);
     }
     else
     {
         deck.triggerCue();
     }
+}
+
+void DeckComponent::seekVideo(double seconds)
+{
+    if (!isVideoMode || videoPlayer == nullptr)
+        return;
+
+    double target = juce::jlimit(0.0, videoDurationSeconds > 0.0 ? videoDurationSeconds : seconds, seconds);
+    videoPositionSeconds = target;
+    videoLastTickMs = juce::Time::getMillisecondCounter();
+    videoPlayer->seekTo(target);
+    overviewWaveform.setVideoProgress(videoPositionSeconds, videoDurationSeconds);
 }
 
 bool DeckComponent::isPlaying() const
@@ -447,8 +601,8 @@ void DeckComponent::updateLabels()
 {
     if (deck.isLoaded() || isVideoMode)
     {
-        double pos = isVideoMode ? 0.0 : deck.getPosition();
-        double total = isVideoMode ? 0.0 : deck.getLengthInSeconds();
+        double pos = isVideoMode ? videoPositionSeconds : deck.getPosition();
+        double total = isVideoMode ? videoDurationSeconds : deck.getLengthInSeconds();
         double remaining = std::max(0.0, total - pos);
 
         char buf[32];
@@ -526,6 +680,22 @@ void DeckComponent::updateLabels()
 void DeckComponent::timerCallback()
 {
     jogWheel.updateAngle();
+    if (isVideoMode)
+    {
+        juce::uint32 now = juce::Time::getMillisecondCounter();
+        double dt = (now - videoLastTickMs) / 1000.0;
+        videoLastTickMs = now;
+        if (isVideoPlaying && dt > 0.0 && dt < 5.0)
+        {
+            videoPositionSeconds += dt;
+            if (videoDurationSeconds > 0.0 && videoPositionSeconds >= videoDurationSeconds)
+            {
+                videoPositionSeconds = videoDurationSeconds;
+                isVideoPlaying = false;
+            }
+            overviewWaveform.setVideoProgress(videoPositionSeconds, videoDurationSeconds);
+        }
+    }
     updateLabels();
     overviewWaveform.updateWaveform();
 }
@@ -562,9 +732,15 @@ void DeckComponent::paint(juce::Graphics& g)
     g.setColour(juce::Colour::fromRGB(48, 54, 70));
     g.drawRoundedRectangle(artBox, 6.0f, 1.0f);
 
-    // Visual Drag Over Indicator
+}
+
+void DeckComponent::paintOverChildren(juce::Graphics& g)
+{
+    // Visual Drag Over Indicator (drawn in foreground on top of all controls)
     if (isDragOver)
     {
+        auto bounds = getLocalBounds().toFloat();
+
         g.setColour(accent.withAlpha(0.18f));
         g.fillRoundedRectangle(bounds.reduced(2.0f), 8.0f);
 
@@ -572,19 +748,19 @@ void DeckComponent::paint(juce::Graphics& g)
         g.drawRoundedRectangle(bounds.reduced(2.0f), 8.0f, 2.5f);
 
         juce::Rectangle<float> banner(bounds.getCentreX() - 130.0f, bounds.getCentreY() - 32.0f, 260.0f, 64.0f);
-        g.setColour(juce::Colour::fromRGB(12, 14, 18).withAlpha(0.94f));
+        g.setColour(juce::Colour::fromRGB(12, 14, 18).withAlpha(0.96f));
         g.fillRoundedRectangle(banner, 8.0f);
         g.setColour(accent);
         g.drawRoundedRectangle(banner, 8.0f, 1.5f);
 
         g.setColour(juce::Colours::white);
         g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-        g.drawText(juce::String("SOLTAR EN DECK ") + juce::String(deckIndex + 1),
+        g.drawText(juce::String(LanguageManager::trUtf8("SOLTAR EN DECK ", "DROP ON DECK ")) + juce::String(deckIndex + 1),
                    banner.removeFromTop(36.0f), juce::Justification::centred, false);
 
         g.setColour(accent);
         g.setFont(juce::FontOptions(10.5f));
-        g.drawText(juce::String::fromUTF8("Pista de Biblioteca o Archivo MP3/WAV"),
+        g.drawText(LanguageManager::trUtf8("Pista de Biblioteca o Archivo MP3/WAV", "Library Track or MP3/WAV File"),
                    banner, juce::Justification::centred, false);
     }
 }
