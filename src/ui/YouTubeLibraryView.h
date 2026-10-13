@@ -45,9 +45,6 @@ private:
     juce::Label apiStatusBadge;
     juce::Label statusLabel;
 
-    // Quick genre tag buttons
-    std::vector<std::unique_ptr<DjButton>> quickTagButtons;
-
     juce::TableListBox table;
     std::vector<YouTubeSearchResult> searchResults;
     bool isSearching { false };

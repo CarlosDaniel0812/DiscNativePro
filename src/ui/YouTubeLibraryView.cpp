@@ -96,27 +96,7 @@ YouTubeLibraryView::YouTubeLibraryView()
     statusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
     addAndMakeVisible(statusLabel);
 
-    // 7. Quick Search Genre Pills
-    const juce::StringArray tags = { "Tech House Mix", "Afro House", "Ibiza Club 2026", "Nu Disco", "Melodic Techno", "Latin Tech Groove", "Festival EDM" };
-    for (const auto& tag : tags)
-    {
-        auto btn = std::make_unique<DjButton>();
-        btn->setText(tag);
-        btn->setFontSize(10.0f);
-        btn->setCornerRadius(12.0f);
-        btn->setCustomColours(juce::Colour::fromRGB(20, 23, 32),
-                              juce::Colour::fromRGB(160, 168, 185),
-                              juce::Colour::fromRGB(0, 229, 255),
-                              juce::Colour::fromRGB(35, 40, 52));
-        btn->onClick = [this, tag]() {
-            searchBox.setText(tag, juce::dontSendNotification);
-            performSearch(tag);
-        };
-        addAndMakeVisible(*btn);
-        quickTagButtons.push_back(std::move(btn));
-    }
-
-    // 8. Results Table
+    // 7. Results Table
     table.setModel(this);
     table.setColour(juce::TableListBox::backgroundColourId, juce::Colour::fromRGB(12, 13, 18));
     table.getHeader().addColumn("#", 1, 36, 28, 45, juce::TableHeaderComponent::notSortable);
@@ -130,9 +110,6 @@ YouTubeLibraryView::YouTubeLibraryView()
     table.setRowHeight(56);
     table.setMultipleSelectionEnabled(false);
     addAndMakeVisible(table);
-
-    // Initial search for popular mixes
-    performSearch("Tech House DJ Mix");
 
     LanguageManager::getInstance().addListener(this);
     refreshLanguage();
@@ -446,20 +423,7 @@ void YouTubeLibraryView::resized()
 
     area.removeFromTop(6);
 
-    // Row 3: Quick Genre Tag Buttons (24px)
-    auto tagRow = area.removeFromTop(24);
-    int tagSpacing = 6;
-    for (size_t i = 0; i < quickTagButtons.size(); ++i)
-    {
-        auto& btn = quickTagButtons[i];
-        int w = 110;
-        btn->setBounds(tagRow.removeFromLeft(w));
-        tagRow.removeFromLeft(tagSpacing);
-    }
-
-    area.removeFromTop(6);
-
-    // Row 4: Status text (18px)
+    // Row 3: Status text (18px)
     statusLabel.setBounds(area.removeFromTop(18));
     area.removeFromTop(4);
 
