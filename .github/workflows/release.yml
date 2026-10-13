@@ -1,0 +1,151 @@
+name: Release Binaries
+
+# Cada tag v* (p.ej. v1.0.0) compila las 3 plataformas y publica
+# los binarios en el GitHub Release. La web enlaza a
+# .../releases/latest/download/<asset>, que siempre sirve lo último.
+on:
+  push:
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSVC developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install WebView2 NuGet Package
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packages
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/packages"
+
+      - name: Build DiscNativePro (Release)
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package Windows Binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          $exePath = Get-ChildItem -Path "build" -Filter "DiscNativePro.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $exePath) {
+            Write-Error "DiscNativePro.exe not found in build directory!"
+            exit 1
+          }
+          Copy-Item $exePath -Destination "dist\DiscNativePro.exe"
+          $exeDir = Split-Path -Parent $exePath
+          $dllPath = Get-ChildItem -Path $exeDir -Filter "WebView2Loader.dll" | Select-Object -First 1 -ExpandProperty FullName
+          if ($dllPath) {
+            Copy-Item $dllPath -Destination "dist\WebView2Loader.dll"
+          }
+          Compress-Archive -Path "dist\*" -DestinationPath "DiscNativePro-Windows-x64.zip" -Force
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DiscNativePro-Windows-x64.zip
+          generate_release_notes: true
+
+  build-linux:
+    name: Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libcurl4-openssl-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build DiscNativePro (Release)
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package Linux Binary (.tar.gz)
+        shell: bash
+        run: |
+          mkdir -p dist
+          find build -name "DiscNativePro" -type f -perm /111 -exec cp {} dist/ \;
+          cp assets/icon.png dist/ 2>/dev/null || true
+          cat << 'EOF' > dist/run.sh
+          #!/usr/bin/env bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec "$DIR/DiscNativePro" "$@"
+          EOF
+          chmod +x dist/run.sh dist/DiscNativePro
+          tar -czvf DiscNativePro-Linux-x64.tar.gz -C dist .
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DiscNativePro-Linux-x64.tar.gz
+          generate_release_notes: true
+
+  build-macos:
+    name: macOS Universal
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build DiscNativePro (Release)
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package macOS App (.zip)
+        shell: bash
+        run: |
+          APP_PATH=$(find build -name "DiscNativePro.app" -maxdepth 4 | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "DiscNativePro.app not found in build directory!"
+            exit 1
+          fi
+          echo "Found app at: $APP_PATH"
+          APP_DIR=$(dirname "$APP_PATH")
+          (cd "$APP_DIR" && ditto -c -k --sequesterRsrc --keepParent DiscNativePro.app "$GITHUB_WORKSPACE/DiscNativePro-macOS-Universal.zip")
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: DiscNativePro-macOS-Universal.zip
+          generate_release_notes: true
