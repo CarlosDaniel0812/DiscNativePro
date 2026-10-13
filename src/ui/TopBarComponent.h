@@ -21,12 +21,16 @@ public:
     bool isRecordingActive() const { return isRecording; }
     void setFxActive(bool active);
     void setStemsActive(bool active);
+    void setSmpActive(bool active);
+    void setUpdateAvailable(bool available);
 
     std::function<void()> onRecClicked;
     std::function<void()> onFxClicked;
     std::function<void()> onStemsClicked;
+    std::function<void()> onSmpClicked;
     std::function<void()> onSettingsClicked;
     std::function<void()> onFullscreenClicked;
+    std::function<void()> onUpdateClicked;
 
 private:
     void updateClock();
@@ -37,6 +41,7 @@ private:
     DjButton recButton;
     DjButton fxButton;
     DjButton stemsButton;
+    DjButton smpButton;
 
     // Center logo
     juce::Label brandLabel;
@@ -45,6 +50,7 @@ private:
     juce::Label ramLabel;
     juce::Label clockLabel;
     DjButton layoutBadge;
+    DjButton updateButton;
     DjButton settingsButton;
     DjButton fullscreenButton;
 

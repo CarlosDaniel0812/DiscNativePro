@@ -73,6 +73,20 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
     };
     addAndMakeVisible(syncButton);
 
+    // Key Lock / Master Tempo toggle (default ON)
+    keyLockButton.setText("KEY");
+    keyLockButton.setFontSize(10.0f);
+    keyLockButton.setCornerRadius(4.0f);
+    keyLockButton.setClickingTogglesState(true);
+    keyLockButton.setToggleState(deck.isKeylock(), juce::dontSendNotification);
+    updateKeyLockButton();
+    keyLockButton.onClick = [this]() {
+        deck.setKeylock(keyLockButton.getToggleState());
+        updateKeyLockButton();
+    };
+    keyLockButton.setTooltip(LanguageManager::trUtf8("Key Lock: el pitch no desafina", "Key Lock: pitch keeps key"));
+    addAndMakeVisible(keyLockButton);
+
     pitchBpmLabel.setText(juce::String(initialBpm, 1), juce::dontSendNotification);
     pitchBpmLabel.setFont(juce::FontOptions(12.0f, juce::Font::bold));
     pitchBpmLabel.setColour(juce::Label::textColourId, juce::Colours::white);
@@ -150,6 +164,36 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
         triggerCue();
     };
     addAndMakeVisible(cueButton);
+
+    // Hot Cue pads (style matching STEMS/FX; session-RAM only, same store as MIDI pads)
+    hotCueRowLabel.setText("HOT CUE", juce::dontSendNotification);
+    hotCueRowLabel.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+    hotCueRowLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
+    hotCueRowLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(hotCueRowLabel);
+
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& pad = hotCueButtons[static_cast<size_t>(i)];
+        pad.setText(juce::String(i + 1));
+        pad.setFontSize(10.5f);
+        pad.setCornerRadius(4.0f);
+        pad.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                             juce::Colour::fromRGB(148, 163, 184),
+                             juce::Colour::fromRGB(148, 163, 184),
+                             juce::Colour::fromRGB(45, 50, 65));
+        pad.onClick = [this, i]() {
+            if (isVideoMode || !deck.isLoaded())
+                return;
+            if (deck.hasHotCue(i))
+                deck.jumpToHotCue(i);
+            else
+                deck.setHotCue(i, deck.getPosition());
+            refreshHotCueButtons();
+        };
+        addAndMakeVisible(pad);
+    }
+    refreshHotCueButtons();
 
     // Grouped Loop Controls
     loopPrevButton.setIcon(LucideIcons::IconType::ChevronLeft, 11.0f);
@@ -273,11 +317,13 @@ void DeckComponent::loadAudioFile(const juce::File& file)
         double bpm = deck.getBpm();
         bpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
         pitchBpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
+        keyBadge.setText(deck.getTrackKey(), juce::dontSendNotification);
         pitchSlider.setValue(0.0);
         overviewWaveform.updateWaveform();
 
         coverArtImage = CoverArtGenerator::getCoverForTrack(cleanTitle, 256);
         jogWheel.setTrackInfo(cleanTitle, bpm, accent);
+        refreshHotCueButtons();
 
         repaint();
 
@@ -424,6 +470,7 @@ void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
     if (displayTitle.startsWith("YouTube Video ("))
         resolveVideoMetadataAsync(result.id);
 
+    refreshHotCueButtons();
     resized();
     repaint();
 }
@@ -569,6 +616,34 @@ void DeckComponent::triggerCue()
     }
 }
 
+void DeckComponent::refreshHotCueButtons()
+{
+    // ponytail: pads are stateless triggers over DeckPlayer RAM store; no disk persist (YAGNI).
+    // Disabled (grey) in YouTube video mode where hot cues don't apply.
+    for (int i = 0; i < 4; ++i)
+    {
+        auto& pad = hotCueButtons[static_cast<size_t>(i)];
+        bool videoDisabled = isVideoMode;
+        bool enabled = !videoDisabled && deck.isLoaded();
+        bool active = !videoDisabled && deck.hasHotCue(i);
+        int state = (enabled ? 2 : 0) + (active ? 1 : 0);
+        if (state == hotCueButtonShown[static_cast<size_t>(i)])
+            continue;
+        hotCueButtonShown[static_cast<size_t>(i)] = state;
+        pad.setEnabled(enabled);
+        if (active)
+            pad.setCustomColours(juce::Colour::fromRGB(245, 158, 11),
+                                 juce::Colours::black,
+                                 juce::Colours::black,
+                                 juce::Colour::fromRGB(251, 191, 36));
+        else
+            pad.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                                 juce::Colour::fromRGB(148, 163, 184),
+                                 juce::Colour::fromRGB(148, 163, 184),
+                                 juce::Colour::fromRGB(45, 50, 65));
+    }
+}
+
 void DeckComponent::seekVideo(double seconds)
 {
     if (!isVideoMode || videoPlayer == nullptr)
@@ -595,6 +670,16 @@ void DeckComponent::formatTime(double seconds, char* buffer, size_t bufferSize)
     int mins = totalSecs / 60;
     int secs = totalSecs % 60;
     std::snprintf(buffer, bufferSize, "%02d:%02d.%1d", mins, secs, tenths);
+}
+
+void DeckComponent::updateKeyLockButton()
+{
+    bool on = keyLockButton.getToggleState();
+    // Verde = lock activo (no desafina), gris = pitch clásico
+    keyLockButton.setCustomColours(on ? juce::Colour::fromRGB(20, 60, 45) : juce::Colour::fromRGB(24, 27, 36),
+                                   on ? juce::Colour::fromRGB(74, 222, 128) : juce::Colour::fromRGB(142, 149, 165),
+                                   on ? juce::Colour::fromRGB(74, 222, 128) : juce::Colour::fromRGB(142, 149, 165),
+                                   on ? juce::Colour::fromRGB(34, 197, 94).withAlpha(0.5f) : juce::Colour::fromRGB(38, 43, 56));
 }
 
 void DeckComponent::updateLabels()
@@ -698,6 +783,7 @@ void DeckComponent::timerCallback()
     }
     updateLabels();
     overviewWaveform.updateWaveform();
+    refreshHotCueButtons();
 }
 
 void DeckComponent::paint(juce::Graphics& g)
@@ -789,7 +875,20 @@ void DeckComponent::resized()
 
     // 2. Overview Waveform (28px)
     overviewWaveform.setBounds(area.removeFromTop(28));
-    area.removeFromTop(8);
+    area.removeFromTop(6);
+
+    // 2b. Hot Cue pads row (28px)
+    auto hotCueRow = area.removeFromBottom(28);
+    hotCueRowLabel.setBounds(hotCueRow.removeFromLeft(62).reduced(2, 0));
+    hotCueRow.removeFromLeft(4);
+    int padW = (hotCueRow.getWidth() - 18) / 4;
+    for (int i = 0; i < 4; ++i)
+    {
+        hotCueButtons[static_cast<size_t>(i)].setBounds(hotCueRow.removeFromLeft(padW).reduced(2, 0));
+        if (i < 3)
+            hotCueRow.removeFromLeft(6);
+    }
+    area.removeFromBottom(6);
 
     // 3. Bottom Transport Controls Bar (36px)
     auto bottomBar = area.removeFromBottom(36);
@@ -841,6 +940,8 @@ void DeckComponent::resized()
 
     // Layout Pitch Area
     syncButton.setBounds(pitchArea.removeFromTop(22).reduced(4, 0));
+    pitchArea.removeFromTop(4);
+    keyLockButton.setBounds(pitchArea.removeFromTop(22).reduced(4, 0));
     pitchArea.removeFromTop(4);
     pitchBpmLabel.setBounds(pitchArea.removeFromTop(16));
     pitchDeltaLabel.setBounds(pitchArea.removeFromTop(14));

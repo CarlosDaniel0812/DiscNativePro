@@ -41,12 +41,23 @@ float JogWheel::getAngleFromPoint(juce::Point<float> pt) const
 
 void JogWheel::mouseDown(const juce::MouseEvent& e)
 {
-    wasPlayingBeforeDrag = deck.isPlaying();
-    if (wasPlayingBeforeDrag)
+    auditioning = false;
+    bending = false;
+    scratching = false;
+    smoothRevPerSec = 0.0f;
+    if (!deck.isPlaying() && deck.isLoaded())
     {
-        deck.pause();
+        // Estilo VirtualDJ: tocar la bandeja en pausa entra en audition
+        // para que el movimiento suene; al soltar vuelve a pausa.
+        deck.play();
+        auditioning = true;
     }
+    // La zona se decide al tocar (no cambia a mitad del gesto).
+    scratching = deck.isLoaded() && deck.getJogMode() == 0 && !isEdgeZone(e.position);
+    if (scratching)
+        deck.beginScratch();
     lastMouseAngle = getAngleFromPoint(e.position);
+    lastMoveMs = juce::Time::getMillisecondCounter();
 }
 
 void JogWheel::mouseDrag(const juce::MouseEvent& e)
@@ -60,22 +71,62 @@ void JogWheel::mouseDrag(const juce::MouseEvent& e)
     else if (delta < -juce::MathConstants<float>::pi)
         delta += juce::MathConstants<float>::twoPi;
 
-    // 1 full turn (2*pi) = 1.8 seconds of audio
-    double timeDelta = (delta / juce::MathConstants<float>::twoPi) * 1.8;
-    double newPos = juce::jmax(0.0, deck.getPosition() + timeDelta);
-    deck.setPosition(newPos);
-
-    currentAngleRadians += delta;
     lastMouseAngle = newAngle;
+
+    juce::uint32 now = juce::Time::getMillisecondCounter();
+    double dt = (now - lastMoveMs) / 1000.0;
+    lastMoveMs = now;
+
+    if (scratching)
+    {
+        // Scratch v2: publico velocidad (rev/s con signo, suavizada).
+        // El hilo de audio integra la aguja: atrás y quieto incluidos.
+        if (dt > 0.0)
+        {
+            float inst = (float)((delta / juce::MathConstants<float>::twoPi) / dt);
+            smoothRevPerSec += (inst - smoothRevPerSec) * 0.35f;
+            deck.setScratchVelocity(juce::jlimit(-10.0f, 10.0f, smoothRevPerSec));
+        }
+    }
+    else
+    {
+        // Borde (vinilo) o toda la superficie (CDJ): pitch bend momentáneo.
+        if (dt > 0.0)
+        {
+            float bend = juce::jlimit(-0.08f, 0.08f, (float)(delta / dt) * 0.01f);
+            deck.setPitchBend(bend);
+            bending = true;
+        }
+    }
     repaint();
 }
 
 void JogWheel::mouseUp(const juce::MouseEvent& /*e*/)
 {
-    if (wasPlayingBeforeDrag)
+    if (scratching)
     {
-        deck.play();
+        deck.setScratchVelocity(0.0f);
+        deck.endScratch();
+        scratching = false;
     }
+    if (bending)
+    {
+        deck.setPitchBend(0.0f);
+        bending = false;
+    }
+    if (auditioning)
+    {
+        deck.pause();
+        auditioning = false;
+    }
+}
+
+bool JogWheel::isEdgeZone(juce::Point<float> pt) const
+{
+    auto bounds = getLocalBounds().toFloat();
+    float diameter = juce::jmin(226.0f, juce::jmin(bounds.getWidth(), bounds.getHeight()) - 6.0f);
+    if (diameter <= 20.0f) return false;
+    return pt.getDistanceFrom(bounds.getCentre()) > diameter * 0.5f * 0.8f;
 }
 
 void JogWheel::paint(juce::Graphics& g)

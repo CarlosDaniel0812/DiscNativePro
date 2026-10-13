@@ -1,12 +1,13 @@
 #include "SettingsModalComponent.h"
 #include "../services/YouTubeService.h"
+#include "../services/WaveformTheme.h"
 
 SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr, int initialTab)
     : audioEngine(engine), midi(midiMgr), activeTab(initialTab)
 {
     setSize(720, 540);
 
-    // 1. Tab Buttons (8 tabs)
+    // 1. Tab Buttons (9 tabs)
     auto setupTabBtn = [this](DjButton& btn, LucideIcons::IconType icon, const juce::String& text, int tabIdx) {
         btn.setIcon(icon, 14.0f);
         btn.setText(text);
@@ -30,6 +31,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupTabBtn(tabStreamingBtn, LucideIcons::IconType::Tv, "Streaming", 5);
     setupTabBtn(tabAIBtn, LucideIcons::IconType::Sparkles, "IA Match", 6);
     setupTabBtn(tabDonateBtn, LucideIcons::IconType::Coffee, "Donar", 7);
+    setupTabBtn(tabDesignBtn, LucideIcons::IconType::Sliders, "Diseño", 8);
 
     // 3. Setup Tab Contents
     bodyViewport.setViewedComponent(&bodyContent, false);
@@ -43,6 +45,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupStreamingTab();
     setupAITab();
     setupDonateTab();
+    setupDesignTab();
 
     // 4. Footer controls
     undoButton.setButtonText("Deshacer");
@@ -137,7 +140,12 @@ void SettingsModalComponent::setupGeneralTab()
 
     jogModeCombo.addItem(juce::String::fromUTF8("Vinilo (Scratch & Pitch Bend al borde)"), 1);
     jogModeCombo.addItem(juce::String::fromUTF8("CDJ (Pitch Bend continuo)"), 2);
-    jogModeCombo.setSelectedId(1, juce::dontSendNotification);
+    jogModeCombo.setSelectedId(audioEngine.getDeck(0).getJogMode() == 1 ? 2 : 1, juce::dontSendNotification);
+    jogModeCombo.onChange = [this]() {
+        int mode = (jogModeCombo.getSelectedId() == 2) ? 1 : 0;
+        audioEngine.getDeck(0).setJogMode(mode);
+        audioEngine.getDeck(1).setJogMode(mode);
+    };
     bodyContent.addChildComponent(jogModeCombo);
 
     pitchRangeLabel.setText(juce::String::fromUTF8("Rango de Pitch por defecto:"), juce::dontSendNotification);
@@ -187,17 +195,6 @@ void SettingsModalComponent::setupGeneralTab()
     waveformFpsCombo.addItem(juce::String::fromUTF8("30 FPS (Ahorro de batería y recursos)"), 2);
     waveformFpsCombo.setSelectedId(1, juce::dontSendNotification);
     bodyContent.addChildComponent(waveformFpsCombo);
-
-    waveformColorLabel.setText(juce::String::fromUTF8("Esquema de color de Waveform:"), juce::dontSendNotification);
-    waveformColorLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
-    waveformColorLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
-    bodyContent.addChildComponent(waveformColorLabel);
-
-    waveformColorCombo.addItem(juce::String::fromUTF8("RGB Multicolor (Frecuencias Agudos/Medios/Graves)"), 1);
-    waveformColorCombo.addItem(juce::String::fromUTF8("Azul Neón Clásico DiscNativePro"), 2);
-    waveformColorCombo.addItem(juce::String::fromUTF8("Monocromo Plata"), 3);
-    waveformColorCombo.setSelectedId(1, juce::dontSendNotification);
-    bodyContent.addChildComponent(waveformColorCombo);
 
     // Section 3: Grabación de Sesiones
     recSectionLabel.setText(juce::String::fromUTF8("Grabación de Sesiones"), juce::dontSendNotification);
@@ -291,6 +288,7 @@ void SettingsModalComponent::refreshLanguage()
     tabStreamingBtn.setText(LanguageManager::trUtf8("Streaming", "Streaming"));
     tabAIBtn.setText(LanguageManager::trUtf8("IA Match", "AI Match"));
     tabDonateBtn.setText(LanguageManager::trUtf8("Donar", "Donate"));
+    tabDesignBtn.setText(LanguageManager::trUtf8("Diseño", "Design"));
 
     undoButton.setButtonText(LanguageManager::trUtf8("Deshacer", "Undo"));
     applyButton.setButtonText(LanguageManager::trUtf8("Aplicar", "Apply"));
@@ -333,14 +331,6 @@ void SettingsModalComponent::refreshLanguage()
     waveformFpsCombo.addItem(LanguageManager::trUtf8("60 FPS (Fluidez ultra suave - Recomendado)", "60 FPS (Ultra Smooth - Recommended)"), 1);
     waveformFpsCombo.addItem(LanguageManager::trUtf8("30 FPS (Ahorro de batería y recursos)", "30 FPS (Battery & Resource Saver)"), 2);
     waveformFpsCombo.setSelectedId(curFps > 0 ? curFps : 1, juce::dontSendNotification);
-
-    waveformColorLabel.setText(LanguageManager::trUtf8("Esquema de color de Waveform:", "Waveform Color Scheme:"), juce::dontSendNotification);
-    int curColor = waveformColorCombo.getSelectedId();
-    waveformColorCombo.clear(juce::dontSendNotification);
-    waveformColorCombo.addItem(LanguageManager::trUtf8("RGB Multicolor (Frecuencias Agudos/Medios/Graves)", "RGB Multicolor (High/Mid/Low Frequencies)"), 1);
-    waveformColorCombo.addItem(LanguageManager::trUtf8("Azul Neón Clásico DiscNativePro", "Classic Neon Blue DiscNativePro"), 2);
-    waveformColorCombo.addItem(LanguageManager::trUtf8("Monocromo Plata", "Silver Monochrome"), 3);
-    waveformColorCombo.setSelectedId(curColor > 0 ? curColor : 1, juce::dontSendNotification);
 
     recSectionLabel.setText(LanguageManager::trUtf8("Grabación de Sesiones", "Session Recording"), juce::dontSendNotification);
     recFolderDescLabel.setText(LanguageManager::trUtf8("Carpeta de destino para archivos grabados (.wav 24-bit):", "Destination folder for recorded files (.wav 24-bit):"), juce::dontSendNotification);
@@ -438,11 +428,22 @@ void SettingsModalComponent::refreshLanguage()
     aiInfoCard.setText(LanguageManager::trUtf8("Obtén tu API Key gratuita:\n• Google Gemini: aistudio.google.com (15 req/min sin costo)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com\n• OpenRouter: openrouter.ai (una key, 200+ modelos)", "Get your free API Key:\n• Google Gemini: aistudio.google.com (15 req/min free)\n• OpenAI: platform.openai.com\n• Anthropic: console.anthropic.com\n• DeepSeek: platform.deepseek.com\n• OpenRouter: openrouter.ai (one key, 200+ models)"), juce::dontSendNotification);
 
     // Tab 7: Donar
-    donateTitleLabel.setText(LanguageManager::trUtf8("Apoya DiscNativePro", "Support DiscNativePro"), juce::dontSendNotification);
-    donateDescLabel.setText(LanguageManager::trUtf8("¿Estás disfrutando de DiscNativePro? Puedes apoyar el desarrollo y las futuras funcionalidades regalándome un café.", "Enjoying DiscNativePro? You can support development and upcoming features by buying me a coffee."), juce::dontSendNotification);
+    donateTitleLabel.setText(LanguageManager::trUtf8("Apoya DiscNativePro", "Support DiscNativePro"), juce::dontSendNotification);    donateDescLabel.setText(LanguageManager::trUtf8("¿Estás disfrutando de DiscNativePro? Puedes apoyar el desarrollo y las futuras funcionalidades regalándome un café.", "Enjoying DiscNativePro? You can support development and upcoming features by buying me a coffee."), juce::dontSendNotification);
     donateBtn.setText(LanguageManager::trUtf8("Donar un café en Cafecito", "Buy me a coffee on Cafecito"));
     donateHintLabel.setText(LanguageManager::trUtf8("Se abrirá tu navegador. Aporte voluntario, ¡gracias por apoyar el proyecto!", "Your browser will open. Voluntary contribution — thanks for supporting the project!"), juce::dontSendNotification);
     donateInfoCard.setText(LanguageManager::trUtf8("Tu aporte ayuda a:\n• Mantener el desarrollo activo y corregir errores.\n• Financiar hosting, licencias y pruebas en equipos reales.\n• Priorizar las funcionalidades que más pide la comunidad.", "Your contribution helps to:\n• Keep active development and bug fixes going.\n• Cover hosting, licenses and testing on real hardware.\n• Prioritize the features the community requests most."), juce::dontSendNotification);
+
+    // Tab 8: Diseño
+    designTitleLabel.setText(LanguageManager::trUtf8("Personalización de Waveforms", "Waveform Personalization"), juce::dontSendNotification);
+    designDescLabel.setText(LanguageManager::trUtf8("Elige los colores de Graves, Medios y Agudos. Se aplican en vivo a los 3 waveforms y se guardan automáticamente.", "Choose the Low, Mid and High colours. They apply live to all 3 waveforms and save automatically."), juce::dontSendNotification);
+    waveLowLabel.setText(LanguageManager::trUtf8("Graves (Low):", "Lows (Low):"), juce::dontSendNotification);
+    waveMidLabel.setText(LanguageManager::trUtf8("Medios (Mid):", "Mids (Mid):"), juce::dontSendNotification);
+    waveHighLabel.setText(LanguageManager::trUtf8("Agudos (High):", "Highs (High):"), juce::dontSendNotification);
+    designPresetLabel.setText(LanguageManager::trUtf8("Esquemas predefinidos:", "Preset schemes:"), juce::dontSendNotification);
+    presetRgbBtn.setText(LanguageManager::trUtf8("RGB Multicolor", "RGB Multicolor"));
+    presetNeonBtn.setText(LanguageManager::trUtf8("Azul Neón", "Neon Blue"));
+    presetSilverBtn.setText(LanguageManager::trUtf8("Plata Mono", "Mono Silver"));
+    refreshDesignSwatches();
 
     updateTabVisibility();
     repaint();
@@ -860,6 +861,117 @@ void SettingsModalComponent::setupDonateTab()
     bodyContent.addChildComponent(donateInfoCard);
 }
 
+void SettingsModalComponent::setupDesignTab()
+{
+    designTitleLabel.setText(juce::String::fromUTF8("Personalización de Waveforms"), juce::dontSendNotification);
+    designTitleLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    designTitleLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
+    bodyContent.addChildComponent(designTitleLabel);
+
+    designDescLabel.setText(juce::String::fromUTF8("Elige los colores de Graves, Medios y Agudos. Se aplican en vivo a los 3 waveforms y se guardan automáticamente."), juce::dontSendNotification);
+    designDescLabel.setFont(juce::FontOptions(10.5f));
+    designDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
+    designDescLabel.setJustificationType(juce::Justification::topLeft);
+    bodyContent.addChildComponent(designDescLabel);
+
+    auto setupRow = [this](juce::Label& label, DjButton& swatch, const char* text, int band) {
+        label.setText(juce::String::fromUTF8(text), juce::dontSendNotification);
+        label.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+        label.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
+        bodyContent.addChildComponent(label);
+
+        swatch.setFontSize(10.5f);
+        swatch.setCornerRadius(6.0f);
+        swatch.onClick = [this, band]() { openColourPicker(band); };
+        bodyContent.addChildComponent(swatch);
+    };
+
+    setupRow(waveLowLabel, waveLowSwatch, "Graves (Low):", 0);
+    setupRow(waveMidLabel, waveMidSwatch, "Medios (Mid):", 1);
+    setupRow(waveHighLabel, waveHighSwatch, "Agudos (High):", 2);
+
+    designPresetLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    designPresetLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(180, 185, 200));
+    bodyContent.addChildComponent(designPresetLabel);
+
+    auto setupPreset = [this](DjButton& btn, int preset) {
+        btn.setFontSize(10.5f);
+        btn.setCornerRadius(6.0f);
+        btn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                             juce::Colour::fromRGB(200, 205, 220),
+                             juce::Colour::fromRGB(0, 180, 216),
+                             juce::Colour::fromRGB(45, 50, 68));
+        btn.onClick = [this, preset]() {
+            WaveformTheme::applyPreset(preset);
+            refreshDesignSwatches();
+        };
+        bodyContent.addChildComponent(btn);
+    };
+
+    setupPreset(presetRgbBtn, WaveformTheme::RgbMulticolor);
+    setupPreset(presetNeonBtn, WaveformTheme::NeonBlue);
+    setupPreset(presetSilverBtn, WaveformTheme::SilverMono);
+
+    refreshDesignSwatches();
+}
+
+void SettingsModalComponent::refreshDesignSwatches()
+{
+    auto paintSwatch = [](DjButton& btn, juce::Colour c) {
+        btn.setCustomColours(c,
+                             c.contrasting(),
+                             c.contrasting(),
+                             juce::Colours::white.withAlpha(0.4f));
+        btn.setText("#" + c.toString().substring(2).toUpperCase());
+    };
+    paintSwatch(waveLowSwatch, WaveformTheme::low());
+    paintSwatch(waveMidSwatch, WaveformTheme::mid());
+    paintSwatch(waveHighSwatch, WaveformTheme::high());
+    repaint();
+}
+
+void SettingsModalComponent::openColourPicker(int band)
+{
+    auto selector = std::make_unique<juce::ColourSelector>(
+        juce::ColourSelector::showAlphaChannel
+        | juce::ColourSelector::showColourAtTop
+        | juce::ColourSelector::editableColour
+        | juce::ColourSelector::showSliders);
+    juce::Colour current = (band == 0) ? WaveformTheme::low()
+                         : (band == 1) ? WaveformTheme::mid()
+                                       : WaveformTheme::high();
+    selector->setCurrentColour(current);
+    selector->setSize(320, 420);
+    selector->addChangeListener(this);
+    activeColourSelector = selector.get();
+    activeColourBand = band;
+
+    juce::DialogWindow::LaunchOptions opts;
+    opts.content.setOwned(selector.release());
+    opts.dialogTitle = LanguageManager::trUtf8("Elegir color de waveform", "Choose waveform colour");
+    opts.useNativeTitleBar = true;
+    opts.resizable = false;
+    opts.escapeKeyTriggersCloseButton = true;
+    opts.launchAsync();
+}
+
+void SettingsModalComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    // SafePointer: nulo automático si el diálogo ya se cerró; solo compara.
+    auto* selector = activeColourSelector.getComponent();
+    if (selector != nullptr && source == selector && activeColourBand >= 0)
+    {
+        juce::Colour c = selector->getCurrentColour();
+        if (activeColourBand == 0)
+            WaveformTheme::setLow(c);
+        else if (activeColourBand == 1)
+            WaveformTheme::setMid(c);
+        else
+            WaveformTheme::setHigh(c);
+        refreshDesignSwatches();
+    }
+}
+
 void SettingsModalComponent::refreshAiModelOptions()
 {
     AIProvider p = providerFromComboId(aiProviderCombo.getSelectedId());
@@ -914,8 +1026,6 @@ void SettingsModalComponent::updateTabVisibility()
     generalSectionDisplay.setVisible(isGeneral);
     waveformFpsLabel.setVisible(isGeneral);
     waveformFpsCombo.setVisible(isGeneral);
-    waveformColorLabel.setVisible(isGeneral);
-    waveformColorCombo.setVisible(isGeneral);
     recSectionLabel.setVisible(isGeneral);
     recFolderDescLabel.setVisible(isGeneral);
     recFolderEditor.setVisible(isGeneral);
@@ -1053,6 +1163,21 @@ void SettingsModalComponent::updateTabVisibility()
     donateHintLabel.setVisible(isDonate);
     donateInfoCard.setVisible(isDonate);
 
+    // Design components (Tab 8)
+    bool isDesign = (activeTab == 8);
+    designTitleLabel.setVisible(isDesign);
+    designDescLabel.setVisible(isDesign);
+    waveLowLabel.setVisible(isDesign);
+    waveMidLabel.setVisible(isDesign);
+    waveHighLabel.setVisible(isDesign);
+    waveLowSwatch.setVisible(isDesign);
+    waveMidSwatch.setVisible(isDesign);
+    waveHighSwatch.setVisible(isDesign);
+    designPresetLabel.setVisible(isDesign);
+    presetRgbBtn.setVisible(isDesign);
+    presetNeonBtn.setVisible(isDesign);
+    presetSilverBtn.setVisible(isDesign);
+
     // Tab buttons styling
     auto updateBtnStyle = [](DjButton& btn, bool active) {
         if (active)
@@ -1078,6 +1203,7 @@ void SettingsModalComponent::updateTabVisibility()
     updateBtnStyle(tabStreamingBtn, activeTab == 5);
     updateBtnStyle(tabAIBtn, activeTab == 6);
     updateBtnStyle(tabDonateBtn, activeTab == 7);
+    updateBtnStyle(tabDesignBtn, activeTab == 8);
 }
 
 void SettingsModalComponent::applySettings()
@@ -1294,11 +1420,11 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
 void SettingsModalComponent::resized()
 {
-    // 1. Tab buttons row (y: 8 to 42) — 8 tabs, modal 720px wide
-    int tabW = 82;
+    // 1. Tab buttons row (y: 8 to 42) — 9 tabs, modal 720px wide
+    int tabW = 74;
     int tabH = 34;
     int spacing = 4;
-    int totalTabsW = tabW * 8 + spacing * 7;
+    int totalTabsW = tabW * 9 + spacing * 8;
     int startTabX = (getWidth() - totalTabsW) / 2;
 
     tabGeneralBtn.setBounds(startTabX, 8, tabW, tabH);
@@ -1309,6 +1435,7 @@ void SettingsModalComponent::resized()
     tabStreamingBtn.setBounds(startTabX + (tabW + spacing) * 5, 8, tabW, tabH);
     tabAIBtn.setBounds(startTabX + (tabW + spacing) * 6, 8, tabW, tabH);
     tabDonateBtn.setBounds(startTabX + (tabW + spacing) * 7, 8, tabW, tabH);
+    tabDesignBtn.setBounds(startTabX + (tabW + spacing) * 8, 8, tabW, tabH);
 
     // 2. Tab Body Area con scroll (el contenido vive en bodyContent, no en this)
     auto bodyRect = getLocalBounds();
@@ -1361,11 +1488,6 @@ void SettingsModalComponent::resized()
         auto row3 = gArea.removeFromTop(24);
         waveformFpsLabel.setBounds(row3.removeFromLeft(220));
         waveformFpsCombo.setBounds(row3);
-        gArea.removeFromTop(4);
-
-        auto row4 = gArea.removeFromTop(24);
-        waveformColorLabel.setBounds(row4.removeFromLeft(220));
-        waveformColorCombo.setBounds(row4);
         gArea.removeFromTop(8);
 
         // Section 3: Grabación de Sesiones
@@ -1564,6 +1686,41 @@ void SettingsModalComponent::resized()
 
         donateCardBox = dArea.removeFromTop(110);
         donateInfoCard.setBounds(donateCardBox.reduced(12, 10));
+    }
+
+    // --- Tab 8: Diseño Layout (Unconditionally set bounds) ---
+    {
+        auto tArea = body;
+        designTitleLabel.setBounds(tArea.removeFromTop(22));
+        tArea.removeFromTop(4);
+        designDescLabel.setBounds(tArea.removeFromTop(34));
+        tArea.removeFromTop(12);
+
+        auto lowRow = tArea.removeFromTop(28);
+        waveLowLabel.setBounds(lowRow.removeFromLeft(210));
+        waveLowSwatch.setBounds(lowRow);
+        tArea.removeFromTop(8);
+
+        auto midRow = tArea.removeFromTop(28);
+        waveMidLabel.setBounds(midRow.removeFromLeft(210));
+        waveMidSwatch.setBounds(midRow);
+        tArea.removeFromTop(8);
+
+        auto highRow = tArea.removeFromTop(28);
+        waveHighLabel.setBounds(highRow.removeFromLeft(210));
+        waveHighSwatch.setBounds(highRow);
+        tArea.removeFromTop(12);
+
+        designPresetLabel.setBounds(tArea.removeFromTop(20));
+        tArea.removeFromTop(4);
+
+        auto presetRow = tArea.removeFromTop(28);
+        int presetW = (presetRow.getWidth() - 16) / 3;
+        presetRgbBtn.setBounds(presetRow.removeFromLeft(presetW));
+        presetRow.removeFromLeft(8);
+        presetNeonBtn.setBounds(presetRow.removeFromLeft(presetW));
+        presetRow.removeFromLeft(8);
+        presetSilverBtn.setBounds(presetRow);
     }
 
     }; // layoutTabs

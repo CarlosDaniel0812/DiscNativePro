@@ -5,6 +5,9 @@
 #include <juce_core/juce_core.h>
 #include <array>
 #include <atomic>
+#include <memory>
+
+class StretchAdapter; // PIMPL: signalsmith-stretch (pesado) no contamina los TUs que incluyen esto
 
 class DeckPlayer : public juce::AudioSource
 {
@@ -42,6 +45,21 @@ public:
     void setPitchRange(float range) { pitchRange.store(juce::jmax(1.0f, range)); }
     float getPitchRange() const     { return pitchRange.load(); }
 
+    // Jog wheel behavior: 0 = Vinyl (center scratch + edge bend), 1 = CDJ (bend all over)
+    void setJogMode(int mode) { jogMode.store(mode == 1 ? 1 : 0); }
+    int getJogMode() const    { return jogMode.load(); }
+
+    // Key Lock / Master Tempo: pitch cambia tempo sin desafinar (default ON)
+    void setKeylock(bool on) { keylock.store(on); updatePlaybackSpeed(); }
+    bool isKeylock() const   { return keylock.load(); }
+
+    // Scratch v2: la mano es dueña de la aguja. UI publica velocidad (rev/s
+    // con signo); el hilo de audio integra la posición por bloque.
+    void beginScratch();
+    void endScratch();
+    void setScratchVelocity(float revsPerSecond) { scratchVelRevPerSec.store(revsPerSecond); }
+    bool isScratching() const { return scratchTouch.load(); }
+
     // Hot Cues (0 to 3 for 4 hot cues)
     void setHotCue(int index, double positionSeconds);
     void jumpToHotCue(int index);
@@ -70,6 +88,7 @@ public:
     // File info
     juce::String getTrackTitle() const;
     juce::String getTrackArtist() const;
+    juce::String getTrackKey() const;
     const juce::File& getCurrentFile() const { return currentFile; }
 
 private:
@@ -83,10 +102,13 @@ private:
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
     std::unique_ptr<juce::BufferingAudioSource> bufferingSource;
     std::unique_ptr<juce::ResamplingAudioSource> resamplingSource;
+    std::unique_ptr<StretchAdapter> stretcher; // Key Lock (solo se usa con keylock ON)
+    int numSrcChannels { 2 };
 
     juce::File currentFile;
     juce::String trackTitle;
     juce::String trackArtist;
+    juce::String trackKey { "--" };
 
     std::atomic<bool> loaded { false };
     std::atomic<bool> playing { false };
@@ -98,6 +120,29 @@ private:
     std::atomic<float> pitchPercent { 0.0f };
     std::atomic<float> pitchBend { 0.0f };
     std::atomic<float> pitchRange { 8.0f };
+    std::atomic<int> jogMode { 0 };
+    std::atomic<bool> keylock { true };
+
+    // Scratch state (atómicos UI<>audio; anclas solo hilo de audio)
+    std::atomic<bool> scratchTouch { false };
+    std::atomic<float> scratchVelRevPerSec { 0.0f };
+    double scratchAnchorSec { 0.0 };
+    int scratchDir { 0 }; // +1 adelante, -1 atrás, 0 quieto (solo hilo de audio)
+    bool scratchAnchorInit { false };
+
+    // Scratch v3b: anillo de historial (lo último escuchado, device-rate).
+    // La reversa lee de aquí: determinista, sin disco ni hilo de fondo.
+    static constexpr int scratchRingSize = 768000; // ~8 s estéreo a 48 kHz (~3 MB)
+    static constexpr int scratchTailSize = 128;
+    static constexpr int scratchXfade = 64;
+    juce::AudioBuffer<float> scratchRing;
+    juce::AudioBuffer<float> scratchTail;
+    int ringWritePos { 0 }; // solo hilo de audio
+    int ringValid { 0 };    // samples válidos (solo hilo de audio)
+    double revHead { 0.0 }; // cabeza fraccional en samples de anillo (solo hilo de audio)
+
+    void writeScratchRing(const juce::AudioSourceChannelInfo& info);
+    float readScratchRing(int ch, double pos) const;
 
     std::atomic<bool> loopActive { false };
     std::atomic<double> loopStartSeconds { 0.0 };

@@ -1,4 +1,5 @@
 #include "VerticalWaveform.h"
+#include "../services/WaveformTheme.h"
 #include <cmath>
 
 VerticalWaveform::VerticalWaveform(DeckPlayer& p1, DeckPlayer& p2)
@@ -50,9 +51,10 @@ void VerticalWaveform::renderDeckHalf(juce::Graphics& g,
     if (bpm <= 20.0) bpm = 124.0;
     double beatInterval = 60.0 / bpm;
 
-    const float pixelsPerSecond = 140.0f;
+    const float pixelsPerSecond = 70.0f; // ventana ~7-8 s: contexto + scroll
     float maxHalfAmp = deckWidth * 0.44f;
     float barHeight = 2.0f;
+    float rowStep = 2.0f; // filas densas estilo referencia (djay): 1-2 px
 
     // Time window visible on screen (scrolling downwards into centerY)
     float pastTimeSpan = (totalHeight - centerY + 10.0f) / pixelsPerSecond;
@@ -61,46 +63,47 @@ void VerticalWaveform::renderDeckHalf(juce::Graphics& g,
     double minVisibleTime = std::max(0.0, currentTime - pastTimeSpan);
     double maxVisibleTime = std::min(totalDur, currentTime + futureTimeSpan);
 
-    // Render 3-band stepped frequency bars
-    for (float y = 0.0f; y < totalHeight; y += barHeight)
+    // Render 3-band bars en el MISMO orden que el overview horizontal:
+    // graves (base) -> medios -> agudos (detalle encima).
+    // Índice fraccional + interpolación: variación continua aunque la fila
+    // caiga entre dos puntos de datos (adiós efecto escalera/peine).
+    for (float y = 0.0f; y < totalHeight; y += rowStep)
     {
         // Exact time offset for this Y coordinate
         double sliceTime = currentTime + (centerY - y) / pixelsPerSecond;
         if (sliceTime < 0.0 || sliceTime > totalDur)
             continue;
 
-        size_t idx = static_cast<size_t>((sliceTime / totalDur) * (double)numPeaks);
-        if (idx >= numPeaks) idx = numPeaks - 1;
+        double fIdx = (sliceTime / totalDur) * (double)numPeaks;
+        size_t i0 = (size_t)fIdx;
+        if (i0 >= numPeaks) i0 = numPeaks - 1;
+        size_t i1 = (i0 + 1 < numPeaks) ? i0 + 1 : i0;
+        float fr = (float)(fIdx - (double)i0);
 
-        float lowVal = low[idx];
-        float midVal = mid[idx];
-        float highVal = high[idx];
+        float lowV = low[i0] + fr * (low[i1] - low[i0]);
+        float midV = mid[i0] + fr * (mid[i1] - mid[i0]);
+        float highV = high[i0] + fr * (high[i1] - high[i0]);
 
-        float lowW = std::max(1.0f, lowVal * maxHalfAmp);
-        float midW = std::max(1.0f, midVal * maxHalfAmp);
-        float highW = std::max(1.0f, highVal * maxHalfAmp);
+        float lowW = lowV * maxHalfAmp;
+        float midW = midV * maxHalfAmp;
+        float highW = highV * maxHalfAmp;
 
-        // 1. High frequency band (Electric Cyan #00e5ff) - Transients / hats shoot wide
-        if (highVal > 0.08f)
-        {
-            g.setColour(juce::Colour::fromRGB(0, 229, 255));
-            g.fillRect(deckCenterX - highW, y, highW * 2.0f, barHeight);
-        }
+        // 1. Low frequency bass base (tema global)
+        g.setColour(WaveformTheme::low());
+        g.fillRect(deckCenterX - lowW, y, lowW * 2.0f, barHeight);
 
-        // 2. Mid frequency band (Amber Orange #ff9f1c) - Vocals / body
-        if (midVal > 0.06f)
-        {
-            g.setColour(juce::Colour::fromRGB(255, 159, 28));
-            g.fillRect(deckCenterX - midW, y, midW * 2.0f, barHeight);
-        }
+        // 2. Mid frequency vocals/leads (tema global)
+        g.setColour(WaveformTheme::mid());
+        g.fillRect(deckCenterX - midW, y, midW * 2.0f, barHeight);
 
-        // 3. Low frequency band (Crimson Red #ff2a4b) - Kick / sub core
-        if (lowVal > 0.04f)
-        {
-            g.setColour(juce::Colour::fromRGB(255, 42, 75));
-            g.fillRect(deckCenterX - lowW, y, lowW * 2.0f, barHeight);
-        }
+        // 3. High frequency transients (tema global)
+        g.setColour(WaveformTheme::high());
+        g.fillRect(deckCenterX - highW, y, highW * 2.0f, barHeight);
     }
+
+    // Región ya reproducida (debajo de la aguja): sombreado como el overview
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.fillRect(startX, centerY, deckWidth, totalHeight - centerY);
 
     // Beatgrid lines and downbeat measure numbers
     int firstBeat = static_cast<int>(std::floor(minVisibleTime / beatInterval));

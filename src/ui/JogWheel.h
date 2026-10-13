@@ -20,6 +20,7 @@ public:
 
 private:
     float getAngleFromPoint(juce::Point<float> pt) const;
+    bool isEdgeZone(juce::Point<float> pt) const;
 
     DeckPlayer& deck;
     juce::Colour accent;
@@ -29,7 +30,11 @@ private:
 
     float currentAngleRadians { 0.0f };
     float lastMouseAngle { 0.0f };
-    bool wasPlayingBeforeDrag { false };
+    bool auditioning { false }; // tocado en pausa: play temporal para que el scratch suene
+    bool bending { false };
+    bool scratching { false }; // zona scratch tomada: publico velocidad, no saltos
+    float smoothRevPerSec { 0.0f };
+    juce::uint32 lastMoveMs { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(JogWheel)
 };

@@ -139,10 +139,16 @@ void ChannelStripComponent::resized()
     cueButton.setBounds(totalArea.removeFromBottom(24).reduced(4, 1));
     totalArea.removeFromBottom(8);
 
-    // 3. Divide remaining height between EQ section and Fader section
-    // Allocate an extended, generous height for the volume fader (130-180px, ~44% of available space)
+    // 3. EQ knobs first: 4 equal rows guaranteed. The volume fader absorbs any
+    // height shortage (min 90px) so the FILTER knob never starves on short screens.
+    // ponytail: previous order (fader min 130 first) overflowed the knob area and
+    // the last knob (FILTER) got the leftovers. Knob floor 28 only kicks in where
+    // the old layout overflowed; tall screens render exactly as before (fader max 180).
     int availH = totalArea.getHeight();
-    int faderH = juce::jlimit(130, 180, (int)((float)availH * 0.44f));
+    int knobSpacing = 3;
+    int knobH = juce::jlimit(28, 44, (availH - 90 - 16) / 4);
+    int knobsTotal = (knobH * 4) + (knobSpacing * 3) + 2;
+    int faderH = juce::jlimit(90, 180, availH - knobsTotal - 4);
     auto faderArea = totalArea.removeFromBottom(faderH);
 
     // Separator line position (raised nicely above the fader)
@@ -150,8 +156,6 @@ void ChannelStripComponent::resized()
     faderArea.removeFromTop(4); // padding below separator line
 
     // 4. EQ Knobs section: perfectly centered vertically in the middle of remaining upper area
-    int knobH = juce::jlimit(36, 44, (totalArea.getHeight() - 24) / 4);
-    int knobSpacing = 3;
     int totalKnobsHeight = (knobH * 4) + (knobSpacing * 3);
     int topOffset = juce::jmax(2, (totalArea.getHeight() - totalKnobsHeight) / 2);
 

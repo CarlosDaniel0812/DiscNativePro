@@ -1,4 +1,5 @@
 #include "ScrollingWaveform.h"
+#include "../services/WaveformTheme.h"
 #include <cmath>
 
 ScrollingWaveform::ScrollingWaveform(DeckPlayer& d1, DeckPlayer& d2)
@@ -20,7 +21,7 @@ void ScrollingWaveform::timerCallback()
     }
 }
 
-void ScrollingWaveform::drawDeckWaveform(juce::Graphics& g, DeckPlayer& player, juce::Rectangle<float> area, juce::Colour accent, bool invert)
+void ScrollingWaveform::drawDeckWaveform(juce::Graphics& g, DeckPlayer& player, juce::Rectangle<float> area, bool invert)
 {
     g.setColour(juce::Colour::fromRGB(14, 15, 19));
     g.fillRect(area);
@@ -81,16 +82,16 @@ void ScrollingWaveform::drawDeckWaveform(juce::Graphics& g, DeckPlayer& player, 
 
             float dir = invert ? 1.0f : -1.0f;
 
-            // Low frequency (Red)
-            g.setColour(juce::Colour::fromRGB(230, 57, 70));
+            // Low frequency (tema global)
+            g.setColour(WaveformTheme::low());
             g.fillRect(x, baselineY, (float)stepPixels, dir * lAmp * 0.85f);
 
-            // Mid frequency (Amber)
-            g.setColour(juce::Colour::fromRGB(255, 159, 28));
+            // Mid frequency (tema global)
+            g.setColour(WaveformTheme::mid());
             g.fillRect(x, baselineY, (float)stepPixels, dir * mAmp * 0.75f);
 
-            // High frequency (Deck Accent)
-            g.setColour(accent);
+            // High frequency (tema global)
+            g.setColour(WaveformTheme::high());
             g.fillRect(x, baselineY, (float)stepPixels, dir * hAmp * 0.65f);
         }
     }
@@ -102,10 +103,10 @@ void ScrollingWaveform::paint(juce::Graphics& g)
     float halfH = bounds.getHeight() * 0.5f;
 
     // Deck 1 (top half, waveform grows downward toward center)
-    drawDeckWaveform(g, deck1, bounds.removeFromTop(halfH), juce::Colour::fromRGB(0, 180, 216), true);
+    drawDeckWaveform(g, deck1, bounds.removeFromTop(halfH), true);
 
     // Deck 2 (bottom half, waveform grows upward toward center)
-    drawDeckWaveform(g, deck2, bounds, juce::Colour::fromRGB(0, 229, 255), false);
+    drawDeckWaveform(g, deck2, bounds, false);
 
     // Center divider
     g.setColour(juce::Colour::fromRGB(36, 40, 52));

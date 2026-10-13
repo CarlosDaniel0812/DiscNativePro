@@ -9,6 +9,23 @@ endif()
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# App version: CI passes -DAPP_VERSION from release tag (v1.2.0 -> 1.2.0).
+# Local builds derive it from git describe (v1.0.0-3-gabc123 -> 1.0.0-3-gabc123),
+# so the updater compares truthful versions instead of a generic -dev marker.
+if(NOT DEFINED APP_VERSION OR "${APP_VERSION}" STREQUAL "")
+    execute_process(COMMAND git describe --tags --dirty --always
+                    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+                    OUTPUT_VARIABLE GIT_DESCRIBE
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    if(GIT_DESCRIBE STREQUAL "")
+        set(APP_VERSION "1.0.0-dev")
+    else()
+        string(REGEX REPLACE "^v" "" APP_VERSION "${GIT_DESCRIBE}")
+    endif()
+endif()
+message(STATUS "DiscNativePro APP_VERSION: ${APP_VERSION}")
+
 include(FetchContent)
 
 # Fetch JUCE 8
@@ -37,8 +54,14 @@ target_sources(DiscNativePro
         src/audio/DjMixer.cpp
         src/audio/BeatDetector.h
         src/audio/BeatDetector.cpp
+        src/audio/KeyDetector.h
+        src/audio/KeyDetector.cpp
         src/audio/DeckFxChain.h
         src/audio/DeckFxChain.cpp
+        src/audio/StretchAdapter.h
+        src/audio/StretchAdapter.cpp
+        src/audio/SamplerBank.h
+        src/audio/SamplerBank.cpp
         src/audio/AudioEngine.h
         src/audio/AudioEngine.cpp
         src/audio/AudioRecorder.h
@@ -55,6 +78,10 @@ target_sources(DiscNativePro
         src/services/AIService.cpp
         src/services/LanguageManager.h
         src/services/LanguageManager.cpp
+        src/services/WaveformTheme.h
+        src/services/WaveformTheme.cpp
+        src/services/UpdateService.h
+        src/services/UpdateService.cpp
         src/services/UsbDriveScanner.h
         src/services/UsbDriveScanner.cpp
         src/services/SoundCloudService.h
@@ -104,6 +131,8 @@ target_sources(DiscNativePro
         src/ui/FxPanelComponent.cpp
         src/ui/StemsPanelComponent.h
         src/ui/StemsPanelComponent.cpp
+        src/ui/SamplerPanelComponent.h
+        src/ui/SamplerPanelComponent.cpp
         src/ui/MainComponent.h
         src/ui/MainComponent.cpp
         src/ui/CoverArtGenerator.h
@@ -118,6 +147,11 @@ target_sources(DiscNativePro
 target_include_directories(DiscNativePro
     PRIVATE
         src
+)
+
+target_compile_definitions(DiscNativePro
+    PRIVATE
+        DISCNATIVEPRO_VERSION="${APP_VERSION}"
 )
 
 target_link_libraries(DiscNativePro

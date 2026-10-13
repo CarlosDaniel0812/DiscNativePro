@@ -39,6 +39,14 @@ TopBarComponent::TopBarComponent()
     stemsButton.onClick = [this]() { if (onStemsClicked) onStemsClicked(); };
     addAndMakeVisible(stemsButton);
 
+    smpButton.setText("SMP");
+    smpButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                               juce::Colour::fromRGB(96, 165, 250),
+                               juce::Colour::fromRGB(96, 165, 250),
+                               juce::Colour::fromRGB(45, 50, 65));
+    smpButton.onClick = [this]() { if (onSmpClicked) onSmpClicked(); };
+    addAndMakeVisible(smpButton);
+
     // 2. Center Brand
     brandLabel.setText("DiscNativePro", juce::dontSendNotification);
     brandLabel.setFont(juce::FontOptions(15.0f, juce::Font::bold));
@@ -91,6 +99,18 @@ TopBarComponent::TopBarComponent()
     fullscreenButton.onClick = [this]() { if (onFullscreenClicked) onFullscreenClicked(); };
     addAndMakeVisible(fullscreenButton);
 
+    updateButton.setIcon(LucideIcons::IconType::ChevronDown, 12.0f);
+    updateButton.setText("UPDATE");
+    updateButton.setFontSize(10.5f);
+    updateButton.setCornerRadius(6.0f);
+    updateButton.setCustomColours(juce::Colour::fromRGB(245, 158, 11),
+                                 juce::Colours::black,
+                                 juce::Colours::black,
+                                 juce::Colour::fromRGB(251, 191, 36));
+    updateButton.onClick = [this]() { if (onUpdateClicked) onUpdateClicked(); };
+    updateButton.setVisible(false);
+    addAndMakeVisible(updateButton);
+
     LanguageManager::getInstance().addListener(this);
     refreshLanguage();
 
@@ -117,6 +137,13 @@ void TopBarComponent::refreshLanguage()
     fxButton.setTooltip(LanguageManager::trUtf8("Panel de Efectos (FX)", "Effects Panel (FX)"));
     stemsButton.setTooltip(LanguageManager::trUtf8("Separación de Pistas (STEMS)", "Track Separation (STEMS)"));
     layoutBadge.setText(LanguageManager::trUtf8("2 Bandejas", "2 Decks"));
+    updateButton.setTooltip(LanguageManager::trUtf8("Nueva versión disponible — clic para ver", "New version available — click to view"));
+}
+
+void TopBarComponent::setUpdateAvailable(bool available)
+{
+    updateButton.setVisible(available);
+    resized();
 }
 
 void TopBarComponent::setFxActive(bool active)
@@ -152,6 +179,24 @@ void TopBarComponent::setStemsActive(bool active)
                                      juce::Colour::fromRGB(148, 163, 184),
                                      juce::Colour::fromRGB(148, 163, 184),
                                      juce::Colour::fromRGB(45, 50, 65));
+    }
+}
+
+void TopBarComponent::setSmpActive(bool active)
+{
+    if (active)
+    {
+        smpButton.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
+                                   juce::Colour::fromRGB(56, 189, 248),
+                                   juce::Colour::fromRGB(56, 189, 248),
+                                   juce::Colour::fromRGB(56, 189, 248).withAlpha(0.6f));
+    }
+    else
+    {
+        smpButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
+                                   juce::Colour::fromRGB(96, 165, 250),
+                                   juce::Colour::fromRGB(96, 165, 250),
+                                   juce::Colour::fromRGB(45, 50, 65));
     }
 }
 
@@ -281,12 +326,19 @@ void TopBarComponent::resized()
     fxButton.setBounds(area.removeFromLeft(58).reduced(0, 2));
     area.removeFromLeft(4);
     stemsButton.setBounds(area.removeFromLeft(82).reduced(0, 2));
+    area.removeFromLeft(4);
+    smpButton.setBounds(area.removeFromLeft(58).reduced(0, 2));
 
     // Right Buttons & Indicators
     fullscreenButton.setBounds(area.removeFromRight(32).reduced(0, 2));
     area.removeFromRight(4);
     settingsButton.setBounds(area.removeFromRight(32).reduced(0, 2));
     area.removeFromRight(6);
+    if (updateButton.isVisible())
+    {
+        updateButton.setBounds(area.removeFromRight(92).reduced(0, 2));
+        area.removeFromRight(6);
+    }
     layoutBadge.setBounds(area.removeFromRight(95).reduced(0, 3));
     area.removeFromRight(6);
     clockLabel.setBounds(area.removeFromRight(80).reduced(0, 3));

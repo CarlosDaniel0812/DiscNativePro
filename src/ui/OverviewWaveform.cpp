@@ -1,4 +1,5 @@
 #include "OverviewWaveform.h"
+#include "../services/WaveformTheme.h"
 
 OverviewWaveform::OverviewWaveform(DeckPlayer& player, juce::Colour deckAccent)
     : deck(player), accent(deckAccent)
@@ -102,16 +103,16 @@ void OverviewWaveform::paint(juce::Graphics& g)
             float mAmp = mid[idx] * halfHeight;
             float hAmp = high[idx] * halfHeight;
 
-            // 1. Low frequency bass base (Red #e63946)
-            g.setColour(juce::Colour::fromRGB(230, 57, 70));
+            // 1. Low frequency bass base (tema global)
+            g.setColour(WaveformTheme::low());
             g.fillRect((float)x, halfHeight - lAmp * 0.8f, 1.0f, lAmp * 1.6f);
 
-            // 2. Mid frequency vocals/leads (Amber #ff9f1c)
-            g.setColour(juce::Colour::fromRGB(255, 159, 28));
+            // 2. Mid frequency vocals/leads (tema global)
+            g.setColour(WaveformTheme::mid());
             g.fillRect((float)x, halfHeight - mAmp * 0.9f, 1.0f, mAmp * 1.8f);
 
-            // 3. High frequency transients (Deck Accent)
-            g.setColour(accent);
+            // 3. High frequency transients (tema global)
+            g.setColour(WaveformTheme::high());
             g.fillRect((float)x, halfHeight - hAmp, 1.0f, hAmp * 2.0f);
         }
     }

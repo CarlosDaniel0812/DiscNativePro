@@ -14,7 +14,7 @@ public:
     void timerCallback() override;
 
 private:
-    void drawDeckWaveform(juce::Graphics& g, DeckPlayer& player, juce::Rectangle<float> area, juce::Colour accent, bool invert);
+    void drawDeckWaveform(juce::Graphics& g, DeckPlayer& player, juce::Rectangle<float> area, bool invert);
 
     DeckPlayer& deck1;
     DeckPlayer& deck2;

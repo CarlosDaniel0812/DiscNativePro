@@ -36,7 +36,8 @@ public:
         Coffee,
         Usb,
         SoundCloud,
-        YouTube
+        YouTube,
+        Bookmark
     };
 
     // Draw the icon vector scaled into the destination rectangle

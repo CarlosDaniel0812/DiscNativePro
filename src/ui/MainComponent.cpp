@@ -9,6 +9,8 @@ MainComponent::MainComponent()
     : midiManager(audioEngine),
       fxPanel(audioEngine.getMixer()),
       stemsPanel(audioEngine.getMixer()),
+      samplerPanel(audioEngine.getSampler(), audioEngine.getFormatManager(),
+                   [this]() { return audioEngine.getSampleRate(); }),
       deck1(0, audioEngine.getDeck(0), juce::Colour::fromRGB(0, 180, 216)),
       deck2(1, audioEngine.getDeck(1), juce::Colour::fromRGB(148, 163, 184)),
       mixer(audioEngine),
@@ -58,6 +60,14 @@ MainComponent::MainComponent()
         resized();
     };
 
+    // Sampler Panel toggle (8 pads one-shot)
+    topBar.onSmpClicked = [this]() {
+        isSamplerPanelVisible = !isSamplerPanelVisible;
+        topBar.setSmpActive(isSamplerPanelVisible);
+        samplerPanel.setVisible(isSamplerPanelVisible);
+        resized();
+    };
+
     // Fullscreen toggle
     topBar.onFullscreenClicked = [this]() {
         if (auto* top = getTopLevelComponent())
@@ -74,12 +84,45 @@ MainComponent::MainComponent()
         openSettings(0);
     };
 
+    // Update badge: abre el diálogo si hay update pendiente; si no, re-chequea
+    // en vivo (auto-reparador ante estados rancios) y abre solo si encuentra.
+    topBar.onUpdateClicked = [this]() {
+        if (updateDialogShown)
+            return; // diálogo ya abierto: no apilar
+        if (pendingUpdate.available)
+        {
+            showUpdateDialog(pendingUpdate);
+            return;
+        }
+        if (updateRechecking)
+            return;
+        updateRechecking = true;
+        juce::Component::SafePointer<MainComponent> safeThis(this);
+        UpdateService::checkForUpdatesAsync([safeThis](const UpdateInfo& info) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->updateRechecking = false;
+            if (!info.available)
+            {
+                safeThis->pendingUpdate = {};
+                safeThis->topBar.setUpdateAvailable(false);
+                return;
+            }
+            safeThis->pendingUpdate = info;
+            safeThis->topBar.setUpdateAvailable(true);
+            safeThis->showUpdateDialog(info);
+        });
+    };
+
     addChildComponent(fxPanel);
     fxPanel.setVisible(isFxPanelVisible);
     topBar.setFxActive(isFxPanelVisible);
     addChildComponent(stemsPanel);
     stemsPanel.setVisible(isStemsPanelVisible);
     topBar.setStemsActive(isStemsPanelVisible);
+    addChildComponent(samplerPanel);
+    samplerPanel.setVisible(isSamplerPanelVisible);
+    topBar.setSmpActive(isSamplerPanelVisible);
     addAndMakeVisible(topBar);
     addAndMakeVisible(deck1);
     addAndMakeVisible(mixer);
@@ -93,12 +136,14 @@ MainComponent::MainComponent()
             deck2.loadAudioFile(file);
     };
 
-    // Synchronize detected Deck BPM back to Library and Automix queue
+    // Synchronize detected Deck BPM/Key back to Library and Automix queue
     deck1.onFileLoaded = [this](const juce::File& file, double detectedBpm) {
         library.updateTrackBpm(file, detectedBpm);
+        library.updateTrackKey(file, deck1.getTrackKey());
     };
     deck2.onFileLoaded = [this](const juce::File& file, double detectedBpm) {
         library.updateTrackBpm(file, detectedBpm);
+        library.updateTrackKey(file, deck2.getTrackKey());
     };
 
     library.onLoadYouTubeTrack = [this](int deckIndex, const YouTubeSearchResult& video) {
@@ -158,6 +203,8 @@ MainComponent::MainComponent()
     setWantsKeyboardFocus(true);
     startTimerHz(30); // 30Hz for smooth crossfader and video mixing
     setSize(1360, 860);
+
+    scheduleUpdateCheck();
 }
 
 MainComponent::~MainComponent()
@@ -338,7 +385,7 @@ void MainComponent::resized()
     topBar.setBounds(area.removeFromTop(40));
 
     float totalRemainingHeight = static_cast<float>(area.getHeight());
-    int libHeight = juce::jlimit(190, 480, static_cast<int>(totalRemainingHeight * (isFxPanelVisible ? 0.32f : 0.38f)));
+    int libHeight = juce::jlimit(190, 480, static_cast<int>(totalRemainingHeight * (isFxPanelVisible ? 0.35f : 0.41f)));
     library.setBounds(area.removeFromBottom(libHeight));
 
     // 3. Optional FX Strip (54px) directly below Decks/Mixer and above Library (djay Pro style)
@@ -351,6 +398,12 @@ void MainComponent::resized()
     if (isStemsPanelVisible)
     {
         stemsPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
+    }
+
+    // 3c. Optional Sampler Strip (76px) above Library
+    if (isSamplerPanelVisible)
+    {
+        samplerPanel.setBounds(area.removeFromBottom(76).reduced(6, 2));
     }
 
     // 4. Center workspace: Deck 1 (left), Center Mixer, Deck 2 (right)
@@ -482,4 +535,69 @@ void MainComponent::openSettings(int targetTab)
             settingsWindow->closeButtonPressed();
         }
     };
+}
+
+void MainComponent::scheduleUpdateCheck()
+{
+    // ponytail: diferido 3s para no competir con el arranque del motor de audio;
+    // un solo chequeo por lanzamiento (la API anónima permite 60 req/h).
+    // Solo enciende el badge: el diálogo nace del clic (orden de ventanas sano,
+    // imposible que quede escondido detrás como fantasma).
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Timer::callAfterDelay(3000, [safeThis]() {
+        if (safeThis == nullptr)
+            return;
+        UpdateService::checkForUpdatesAsync([safeThis](const UpdateInfo& info) {
+            if (safeThis == nullptr || !info.available)
+                return;
+            safeThis->pendingUpdate = info;
+            safeThis->topBar.setUpdateAvailable(true);
+        });
+    });
+}
+
+void MainComponent::showUpdateDialog(const UpdateInfo& info)
+{
+    if (updateDialogShown)
+        return;
+    updateDialogShown = true;
+
+    auto title = LanguageManager::trUtf8("Nueva versión disponible: ", "New version available: ")
+               + info.latestVersion;
+    juce::String notes = info.releaseNotes.trim();
+    if (notes.length() > 800)
+        notes = notes.substring(0, 800) + "...";
+    if (notes.isEmpty())
+        notes = LanguageManager::trUtf8("Hay una nueva versión de DiscNativePro lista para descargar.",
+                                        "A new version of DiscNativePro is ready to download.");
+    auto message = LanguageManager::trUtf8("Tu versión: ", "Your version: ")
+                 + info.currentVersion + "\n\n" + notes;
+
+    juce::AlertWindow::showAsync(
+        juce::MessageBoxOptions()
+            .withIconType(juce::AlertWindow::QuestionIcon)
+            .withTitle(title)
+            .withMessage(message)
+            .withButton(LanguageManager::trUtf8("Descargar", "Download"))
+            .withButton(LanguageManager::trUtf8("Omitir versión", "Skip version"))
+            .withButton(LanguageManager::trUtf8("Más tarde", "Later")),
+        juce::ModalCallbackFunction::create([safeThis = juce::Component::SafePointer<MainComponent>(this),
+                                             info](int result) {
+            if (safeThis == nullptr)
+                return;
+            safeThis->updateDialogShown = false;
+            if (result == 0) // Descargar
+            {
+                juce::String url = info.downloadUrl.isNotEmpty() ? info.downloadUrl : info.pageUrl;
+                if (url.isNotEmpty())
+                    juce::URL(url).launchInDefaultBrowser();
+            }
+            else if (result == 1) // Omitir versión
+            {
+                UpdateService::setSkippedTag(info.latestTag);
+                safeThis->pendingUpdate = {};
+                safeThis->topBar.setUpdateAvailable(false);
+            }
+            // "Más tarde": el badge queda visible para reabrir el diálogo.
+        }));
 }

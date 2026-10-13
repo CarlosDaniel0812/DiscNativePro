@@ -28,8 +28,12 @@ jobs:
           nuget install Microsoft.Web.WebView2 -Version 1.0.2903.40 -OutputDirectory packages
 
       - name: Configure CMake
+        shell: pwsh
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/packages"
+          $ver = "${{ github.ref_name }}"
+          if ($ver.StartsWith("v")) { $ver = $ver.Substring(1) }
+          if ($ver -notmatch '^[0-9]') { $ver = "1.0.0-dev" }
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DAPP_VERSION="$ver" -DJUCE_WEBVIEW2_PACKAGE_LOCATION="${{ github.workspace }}/packages"
 
       - name: Build DiscNativePro (Release)
         run: |
@@ -91,7 +95,9 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+          VER="${GITHUB_REF_NAME}"; VER="${VER#v}"
+          case "$VER" in [0-9]*) ;; *) VER="1.0.0-dev";; esac
+          cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DAPP_VERSION="$VER"
 
       - name: Build DiscNativePro (Release)
         run: |
@@ -126,7 +132,9 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          VER="${GITHUB_REF_NAME}"; VER="${VER#v}"
+          case "$VER" in [0-9]*) ;; *) VER="1.0.0-dev";; esac
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DAPP_VERSION="$VER"
 
       - name: Build DiscNativePro (Release)
         run: |
@@ -141,6 +149,10 @@ jobs:
             exit 1
           fi
           echo "Found app at: $APP_PATH"
+          echo "Signing app bundle ad-hoc to seal resources and prevent Gatekeeper damage error..."
+          codesign --force --deep --sign - "$APP_PATH"
+          echo "Verifying app bundle signature..."
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
           APP_DIR=$(dirname "$APP_PATH")
           (cd "$APP_DIR" && ditto -c -k --sequesterRsrc --keepParent DiscNativePro.app "$GITHUB_WORKSPACE/DiscNativePro-macOS-Universal.zip")
 

@@ -9,6 +9,7 @@
 #include "CoverArtGenerator.h"
 #include "DjButton.h"
 #include "../services/LanguageManager.h"
+#include <array>
 
 class DeckComponent : public juce::Component,
                       public juce::FileDragAndDropTarget,
@@ -64,6 +65,7 @@ public:
 
 private:
     void updateLabels();
+    void updateKeyLockButton();
     void formatTime(double seconds, char* buffer, size_t bufferSize);
     // Resuelve título/autor reales cuando solo tenemos el ID (drag yt:ID).
     // No bloquea: carga inmediata + actualización async si el video sigue cargado.
@@ -101,6 +103,7 @@ private:
 
     // Pitch Section (Side edge)
     DjButton syncButton { "SYNC" };
+    DjButton keyLockButton { "KEY" };
     juce::Label pitchBpmLabel;
     juce::Label pitchDeltaLabel;
     juce::Slider pitchSlider;
@@ -113,6 +116,12 @@ private:
     DjButton loopPrevButton;
     DjButton loopBeatsButton;
     DjButton loopNextButton;
+
+    // Hot Cue row (4 pads per deck, session-RAM only)
+    juce::Label hotCueRowLabel;
+    std::array<DjButton, 4> hotCueButtons;
+    std::array<int, 4> hotCueButtonShown { -1, -1, -1, -1 }; // cached (enabled,active) to avoid 60Hz repaint spam
+    void refreshHotCueButtons();
 
     int currentLoopBeats { 4 };
     juce::Image coverArtImage;

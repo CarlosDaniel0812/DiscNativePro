@@ -8,6 +8,8 @@
 #include "LibraryComponent.h"
 #include "FxPanelComponent.h"
 #include "StemsPanelComponent.h"
+#include "SamplerPanelComponent.h"
+#include "../services/UpdateService.h"
 
 class MainComponent : public juce::Component,
                       public juce::DragAndDropContainer,
@@ -32,6 +34,7 @@ private:
     TopBarComponent topBar;
     FxPanelComponent fxPanel;
     StemsPanelComponent stemsPanel;
+    SamplerPanelComponent samplerPanel;
     DeckComponent deck1;
     DeckComponent deck2;
     MixerComponent mixer;
@@ -39,6 +42,7 @@ private:
 
     bool isFxPanelVisible { true };
     bool isStemsPanelVisible { false };
+    bool isSamplerPanelVisible { false };
     juce::Component::SafePointer<juce::DialogWindow> settingsWindow;
 
     // Automix orchestration state
@@ -54,6 +58,13 @@ private:
     void stopAutomix();
     void automixAdvance();
     void openSettings(int targetTab = 0);
+
+    // Update notification (GitHub Releases, once per launch)
+    UpdateInfo pendingUpdate;
+    bool updateDialogShown { false };
+    bool updateRechecking { false }; // anti-doble-chequeo en clics seguidos
+    void scheduleUpdateCheck();
+    void showUpdateDialog(const UpdateInfo& info);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

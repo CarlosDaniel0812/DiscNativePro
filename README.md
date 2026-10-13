@@ -75,6 +75,12 @@ cmake --build build --config Release -j
 open build/DiscNativePro_artefacts/Release/DiscNativePro.app
 ```
 
+> **Primer inicio en macOS (Binario descargado de la web o GitHub Releases)**:  
+> Al ser un proyecto de código abierto sin licencia corporativa anual de Apple, macOS Gatekeeper puede solicitar confirmación al abrir por primera vez:
+> 1. Haz clic derecho sobre `DiscNativePro.app` > **Abrir** > Confirmar **Abrir**.
+> 2. O en **Ajustes del Sistema** > **Privacidad y seguridad** > pulsa **"Abrir de todos modos"**.
+> 3. O desde Terminal: `xattr -cr /Applications/DiscNativePro.app`
+
 ---
 
 ## Compilación y Generación del `.exe` en Windows

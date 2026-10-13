@@ -7,7 +7,11 @@ public:
     DiscNativeProApplication() {}
 
     const juce::String getApplicationName() override       { return "DiscNativePro"; }
-    const juce::String getApplicationVersion() override    { return "1.0.0"; }
+#ifdef DISCNATIVEPRO_VERSION
+    const juce::String getApplicationVersion() override    { return DISCNATIVEPRO_VERSION; }
+#else
+    const juce::String getApplicationVersion() override    { return "1.0.0-dev"; }
+#endif
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise(const juce::String& commandLineParameters) override

@@ -1315,3 +1315,47 @@ void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
     }
 }
 
+void LibraryComponent::updateTrackKey(const juce::File& file, const juce::String& key)
+{
+    if (key.isEmpty() || key == "--")
+        return;
+
+    bool updated = false;
+    for (auto& t : allTracks)
+    {
+        if (t.file == file)
+        {
+            t.key = key;
+            updated = true;
+            break;
+        }
+    }
+
+    for (auto& t : filteredTracks)
+    {
+        if (t.file == file)
+        {
+            t.key = key;
+            updated = true;
+            break;
+        }
+    }
+
+    for (auto& t : automixQueue)
+    {
+        if (t.file == file)
+        {
+            t.key = key;
+            updated = true;
+            break;
+        }
+    }
+
+    if (updated)
+    {
+        table.updateContent();
+        table.repaint();
+        repaint();
+    }
+}
+

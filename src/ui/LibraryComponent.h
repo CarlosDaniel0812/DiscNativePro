@@ -70,6 +70,7 @@ public:
     void clearAutomixQueue();
     void setAutomixRunning(bool running);
     void updateTrackBpm(const juce::File& file, double bpm);
+    void updateTrackKey(const juce::File& file, const juce::String& key);
 
     // MIDI / Hardware Browser Navigation
     void navigateBrowser(int delta);

@@ -11,7 +11,8 @@
 #include "DjButton.h"
 
 class SettingsModalComponent : public juce::Component,
-                               public LanguageManager::Listener
+                               public LanguageManager::Listener,
+                               public juce::ChangeListener
 {
 public:
     SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr, int initialTab = 0);
@@ -20,6 +21,7 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
     void languageChanged() override;
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void refreshLanguage();
     void setActiveTab(int tabIndex);
 
@@ -33,6 +35,9 @@ private:
     void setupStreamingTab();
     void setupAITab();
     void setupDonateTab();
+    void setupDesignTab();
+    void openColourPicker(int band); // 0 = graves, 1 = medios, 2 = agudos
+    void refreshDesignSwatches();
     void refreshMidiDevices();
     void updateTabVisibility();
     void applySettings();
@@ -41,7 +46,7 @@ private:
 
     AudioEngine& audioEngine;
     MidiManager& midi;
-    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA, 7: Donar
+    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA, 7: Donar, 8: Diseño
 
     // Tab buttons
     DjButton tabGeneralBtn;
@@ -52,6 +57,7 @@ private:
     DjButton tabStreamingBtn;
     DjButton tabAIBtn;
     DjButton tabDonateBtn;
+    DjButton tabDesignBtn;
 
     // --- Tab 0: General Controls ---
     juce::Label languageSectionLabel;
@@ -70,8 +76,6 @@ private:
     juce::Label generalSectionDisplay;
     juce::Label waveformFpsLabel;
     juce::ComboBox waveformFpsCombo;
-    juce::Label waveformColorLabel;
-    juce::ComboBox waveformColorCombo;
 
     juce::Label recSectionLabel;
     juce::Label recFolderDescLabel;
@@ -154,6 +158,22 @@ private:
     DjButton donateBtn;
     juce::Label donateHintLabel;
     juce::Label donateInfoCard;
+
+    // --- Tab 8: Diseño (colores de waveforms) Controls ---
+    juce::Label designTitleLabel;
+    juce::Label designDescLabel;
+    juce::Label waveLowLabel;
+    juce::Label waveMidLabel;
+    juce::Label waveHighLabel;
+    DjButton waveLowSwatch;
+    DjButton waveMidSwatch;
+    DjButton waveHighSwatch;
+    juce::Label designPresetLabel;
+    DjButton presetRgbBtn;
+    DjButton presetNeonBtn;
+    DjButton presetSilverBtn;
+    juce::Component::SafePointer<juce::ColourSelector> activeColourSelector;
+    int activeColourBand { -1 };
 
     // --- Footer Controls ---
     juce::TextButton undoButton { "Deshacer" };

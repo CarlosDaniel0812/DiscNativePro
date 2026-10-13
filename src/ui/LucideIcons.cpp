@@ -462,6 +462,20 @@ juce::Path LucideIcons::getPath(IconType icon)
             p.setUsingNonZeroWinding(false); // Even-Odd fill rule creates the transparent cutout
             break;
         }
+
+        case IconType::Bookmark:
+        {
+            // Lucide bookmark ribbon: m19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z
+            p.startNewSubPath(19.0f, 21.0f);
+            p.lineTo(12.0f, 16.0f);
+            p.lineTo(5.0f, 21.0f);
+            p.lineTo(5.0f, 5.0f);
+            p.quadraticTo(5.0f, 3.0f, 7.0f, 3.0f);
+            p.lineTo(17.0f, 3.0f);
+            p.quadraticTo(19.0f, 3.0f, 19.0f, 5.0f);
+            p.closeSubPath();
+            break;
+        }
     }
 
     return p;

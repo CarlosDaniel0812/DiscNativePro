@@ -190,6 +190,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* /*inputCh
     djMixer.setDeckBpm(1, static_cast<float>(deck2.getBpm()));
     djMixer.process(deck1Buffer, deck2Buffer, masterBuffer, cueBuffer, numSamples);
 
+    // 2b. Sampler one-shots al master post-crossfader (entran a la grabación)
+    samplerBank.process(masterBuffer, numSamples);
+
     // 3. Push to master recorder (lock-free, zero allocation)
     audioRecorder.pushAudioBlock(masterBuffer, numSamples);
 
@@ -307,6 +310,7 @@ void AudioEngine::applyTempoBlend(float val)
 void AudioEngine::alignBeatPhase(DeckPlayer& masterDeck, DeckPlayer& slaveDeck)
 {
     if (!masterDeck.isLoaded() || !slaveDeck.isLoaded()) return;
+    if (masterDeck.isScratching() || slaveDeck.isScratching()) return; // no pelear con la mano
 
     double bpm = masterDeck.getBpm();
     if (bpm <= 0.0) bpm = 120.0;
