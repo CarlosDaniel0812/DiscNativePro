@@ -1,4 +1,7 @@
 #include "AudioEngine.h"
+#if JUCE_WINDOWS
+#include "MediaFoundationAudioFormat_win.h"
+#endif
 
 AudioEngine::AudioEngine()
     : deck1(formatManager, diskReaderThread),
@@ -6,6 +9,9 @@ AudioEngine::AudioEngine()
 {
     // Register audio formats (WAV, AIFF, FLAC, OGG, and CoreAudio MP3/AAC/M4A on macOS are all in basic formats)
     formatManager.registerBasicFormats();
+#if JUCE_WINDOWS
+    formatManager.registerFormat(new MediaFoundationAudioFormat(), false);
+#endif
 }
 
 AudioEngine::~AudioEngine()

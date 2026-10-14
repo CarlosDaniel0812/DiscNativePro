@@ -8,6 +8,8 @@
 struct YouTubeVideoComponent::Pimpl
 {
     std::unique_ptr<juce::WebBrowserComponent> browser;
+    juce::String currentVideoId;
+    bool currentAutoplay { false };
 
     Pimpl()
     {
@@ -22,7 +24,33 @@ struct YouTubeVideoComponent::Pimpl
                                juce::WebBrowserComponent::Options::WinWebView2{}
                                    .withUserDataFolder(dataDir)
                                    .withStatusBarDisabled()
-                           );
+                           )
+                           .withResourceProvider([this](const juce::String& path) -> std::optional<juce::WebBrowserComponent::Resource> {
+                               juce::String vid = currentVideoId;
+                               bool autoPl = currentAutoplay;
+
+                               if (path.contains("v="))
+                               {
+                                   auto query = path.fromFirstOccurrenceOf("?", false, false);
+                                   auto params = juce::StringArray::fromTokens(query, "&", "");
+                                   for (auto& p : params)
+                                   {
+                                       if (p.startsWith("v="))
+                                           vid = p.substring(2);
+                                       else if (p.startsWith("a="))
+                                           autoPl = (p.substring(2) == "1");
+                                   }
+                               }
+
+                               juce::String html = buildYouTubeEmbedHtml(vid, autoPl, "https://juce.backend");
+                               auto rawUtf8 = html.toRawUTF8();
+                               auto len = strlen(rawUtf8);
+
+                               std::vector<std::byte> byteVec(len);
+                               std::memcpy(byteVec.data(), rawUtf8, len);
+
+                               return juce::WebBrowserComponent::Resource { std::move(byteVec), "text/html" };
+                           });
 
         browser = std::make_unique<juce::WebBrowserComponent>(options);
     }
@@ -33,9 +61,11 @@ struct YouTubeVideoComponent::Pimpl
     {
         if (!browser) return;
 
-        // Wrapper con blocker anti-clics; data: URL porque WebBrowserComponent no expone loadHTMLString
-        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay);
-        browser->goToURL("data:text/html;charset=utf-8," + juce::URL::addEscapeChars(html, true));
+        currentVideoId = videoId;
+        currentAutoplay = autoplay;
+
+        // Carga bajo origen HTTPS seguro https://juce.backend/player.html
+        browser->goToURL(juce::WebBrowserComponent::getResourceProviderRoot() + "player.html?v=" + videoId + "&a=" + (autoplay ? "1" : "0"));
     }
 
     void setVolume(float volume0to1)

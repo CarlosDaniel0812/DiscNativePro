@@ -68,7 +68,12 @@ public:
     // Automix queue management
     void addToAutomixQueue(const std::vector<TrackItem>& tracks);
     void clearAutomixQueue();
+    void setAutomixQueue(const std::vector<TrackItem>& tracks);
     void setAutomixRunning(bool running);
+    void setQueueMessage(const juce::String& message);
+    void setSmartBusy(bool busy);
+    bool isSmartBusy() const { return smartBusy; }
+    std::vector<TrackItem> allLocalTrackItems() const;
     void updateTrackBpm(const juce::File& file, double bpm);
     void updateTrackKey(const juce::File& file, const juce::String& key);
 
@@ -88,6 +93,7 @@ public:
     std::function<void(int deckIndex, const struct YouTubeSearchResult& video)> onLoadYouTubeTrack;
     std::function<void(const std::vector<TrackItem>&)> onStartAutomix;
     std::function<void()> onStopAutomix;
+    std::function<void()> onSmartAutomix;
     std::function<void(int targetTab)> onOpenSettings;
 
 private:
@@ -119,6 +125,7 @@ private:
     // 4. Right Automix Panel
     DjButton automixHeader;
     DjButton startAutomixBtn;
+    DjButton smartAutomixBtn;
     DjButton clearQueueBtn;
     juce::Label queueTitle;
 
@@ -129,6 +136,7 @@ private:
     std::vector<TrackItem> automixQueue;
     bool automixDropHover { false };
     bool automixRunning { false };
+    bool smartBusy { false };
 
     // Hardware browsing state
     bool isBrowsingFolders { false };

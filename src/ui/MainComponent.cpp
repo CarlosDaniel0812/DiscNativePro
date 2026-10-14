@@ -3,6 +3,7 @@
 #include "SettingsModalComponent.h"
 #include "CoverArtGenerator.h"
 #include "../services/LanguageManager.h"
+#include "../services/AIService.h"
 #include <juce_audio_utils/juce_audio_utils.h>
 
 MainComponent::MainComponent()
@@ -158,6 +159,9 @@ MainComponent::MainComponent()
     };
     library.onStopAutomix = [this]() {
         stopAutomix();
+    };
+    library.onSmartAutomix = [this]() {
+        startSmartAutomix();
     };
     library.onOpenSettings = [this](int targetTab) {
         openSettings(targetTab);
@@ -459,6 +463,144 @@ void MainComponent::stopAutomix()
 
     library.setAutomixRunning(false);
     library.clearAutomixQueue();
+}
+
+namespace
+{
+// Cruce rec→archivo con nombres pre-normalizados (1 minúscula por archivo,
+// no por rec: escala a bibliotecas grandes sin costo de IA extra).
+bool smartMatchesFile(const juce::String& normFileName,
+                      const juce::String& cleanTitle,
+                      const juce::String& cleanArtist)
+{
+    if (cleanTitle.isEmpty())
+        return false;
+    if (normFileName.contains(cleanTitle))
+        return true;
+    return cleanArtist.isNotEmpty()
+        && normFileName.contains(cleanArtist)
+        && normFileName.contains(cleanTitle.substring(0, 5));
+}
+} // namespace
+
+void MainComponent::startSmartAutomix()
+{
+    if (smartAutomixBusy)
+        return;
+
+    // Deck activo (misma lógica del timer): el que suena manda.
+    float xfader = audioEngine.getMixer().getCrossfader();
+    bool d1Playing = deck1.isPlaying() || deck1.isVideoPlayingActive();
+    bool d2Playing = deck2.isPlaying() || deck2.isVideoPlayingActive();
+    int activeDeckIdx = 0;
+    if (d2Playing && !d1Playing)
+        activeDeckIdx = 1;
+    else if (d1Playing && !d2Playing)
+        activeDeckIdx = 0;
+    else
+        activeDeckIdx = (xfader > 0.0f) ? 1 : 0;
+
+    auto& activeDeckComp = (activeDeckIdx == 0) ? deck1 : deck2;
+    if (!activeDeckComp.isLoaded())
+    {
+        library.setQueueMessage(LanguageManager::trUtf8("Pon un tema a sonar y pulsa AutoMix IA",
+                                                        "Play a track, then press Smart AutoMix"));
+        return;
+    }
+
+    if (!AIService::isEnabled() || !AIService::isConfigured())
+    {
+        library.setQueueMessage(LanguageManager::trUtf8("Configura tu API key de IA en Ajustes para el AutoMix IA",
+                                                        "Set your AI API key in Settings for Smart AutoMix"));
+        return;
+    }
+
+    auto items = library.allLocalTrackItems();
+    if (items.empty())
+    {
+        library.setQueueMessage(LanguageManager::trUtf8("Tu biblioteca local está vacía (PC o USB)",
+                                                        "Your local library is empty (PC or USB)"));
+        return;
+    }
+
+    CurrentTrackContext ctx;
+    ctx.activeDeck = activeDeckIdx;
+    ctx.title = activeDeckComp.getTrackTitle();
+    ctx.artist = activeDeckComp.getTrackArtist();
+    ctx.bpm = activeDeckComp.getBpm();
+    ctx.key = activeDeckComp.getTrackKey();
+    ctx.isVideo = activeDeckComp.isVideoModeActive();
+    ctx.videoId = activeDeckComp.getVideoId();
+
+    const juce::File playingFile = audioEngine.getDeck(activeDeckIdx).getCurrentFile();
+
+    smartAutomixBusy = true;
+    library.setSmartBusy(true);
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    AIService::requestRecommendationsAsync(ctx, [safeThis, items = std::move(items), playingFile](
+            const std::vector<AIRecommendation>& recs, const juce::String& errorMsg) {
+        if (safeThis == nullptr)
+            return;
+        safeThis->smartAutomixBusy = false;
+        safeThis->library.setSmartBusy(false);
+
+        if (!errorMsg.isEmpty())
+        {
+            safeThis->library.setQueueMessage(errorMsg);
+            return;
+        }
+
+        // Nombres normalizados una sola vez (no una por rec)
+        struct Cand { juce::String norm; const TrackItem* item; };
+        std::vector<Cand> cands;
+        cands.reserve(items.size());
+        for (const auto& t : items)
+            cands.push_back({ t.file.getFileNameWithoutExtension().toLowerCase(), &t });
+
+        std::vector<TrackItem> matched;
+        for (const auto& r : recs)
+        {
+            if ((int)matched.size() >= 10)
+                break;
+            auto cleanTitle = r.title.toLowerCase().trim();
+            auto cleanArtist = r.artist.toLowerCase().trim();
+            for (const auto& c : cands)
+            {
+                if (!playingFile.getFullPathName().isEmpty()
+                    && c.item->file == playingFile)
+                    continue; // el que suena no se encola
+                bool already = false;
+                for (const auto& m : matched)
+                    if (m.file == c.item->file) { already = true; break; }
+                if (already)
+                    continue;
+                if (smartMatchesFile(c.norm, cleanTitle, cleanArtist))
+                {
+                    matched.push_back(*c.item);
+                    break;
+                }
+            }
+        }
+
+        if (matched.empty())
+        {
+            safeThis->library.setQueueMessage(
+                LanguageManager::trUtf8("Sin coincidencias en tu biblioteca (IA sugirió ", "No matches in your library (AI suggested ")
+                + juce::String((int)recs.size())
+                + LanguageManager::trUtf8("). Prueba con otro tema", "). Try another track"));
+            return;
+        }
+
+        safeThis->library.setAutomixQueue(matched);
+        if ((int)matched.size() < 10)
+            safeThis->library.setQueueMessage(
+                LanguageManager::trUtf8("AutoMix IA: ", "Smart AutoMix: ")
+                + juce::String((int)matched.size())
+                + LanguageManager::trUtf8(" de 10 (tu biblioteca da para esto)",
+                                          " of 10 (that's what your library has)"));
+        safeThis->startAutomix(matched);
+    });
 }
 
 void MainComponent::automixAdvance()

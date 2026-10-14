@@ -23,7 +23,7 @@ struct YouTubeVideoComponent::Pimpl
         if (!browser) return;
 
         // Wrapper con blocker anti-clics; data: URL porque WebBrowserComponent no expone loadHTMLString
-        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay);
+        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay, "http://localhost:3000");
         browser->goToURL("data:text/html;charset=utf-8," + juce::URL::addEscapeChars(html, true));
     }
 

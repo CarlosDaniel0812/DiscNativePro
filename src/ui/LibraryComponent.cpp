@@ -211,6 +211,19 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     };
     addAndMakeVisible(startAutomixBtn);
 
+    smartAutomixBtn.setIcon(LucideIcons::IconType::Zap, 12.0f);
+    smartAutomixBtn.setFontSize(11.0f);
+    smartAutomixBtn.setCornerRadius(5.0f);
+    smartAutomixBtn.setCustomColours(juce::Colour::fromRGB(22, 25, 34),
+                                     juce::Colour::fromRGB(142, 149, 165),
+                                     juce::Colour::fromRGB(142, 149, 165),
+                                     juce::Colour::fromRGB(38, 43, 56));
+    smartAutomixBtn.onClick = [this]() {
+        if (!smartBusy && onSmartAutomix)
+            onSmartAutomix();
+    };
+    addAndMakeVisible(smartAutomixBtn);
+
     clearQueueBtn.setIcon(LucideIcons::IconType::Minus, 10.0f);
     clearQueueBtn.setCornerRadius(4.0f);
     clearQueueBtn.setCustomColours(juce::Colours::transparentBlack,
@@ -266,6 +279,9 @@ void LibraryComponent::refreshLanguage()
         startAutomixBtn.setText(LanguageManager::trUtf8("Detener Automix", "Stop Automix"));
     else
         startAutomixBtn.setText(LanguageManager::trUtf8("Comenzar Automix", "Start Automix"));
+
+    smartAutomixBtn.setText(smartBusy ? LanguageManager::trUtf8("Consultando IA…", "Asking AI…")
+                                      : LanguageManager::trUtf8("AutoMix IA", "Smart AutoMix"));
 
     if (automixQueue.empty())
         queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
@@ -953,6 +969,8 @@ void LibraryComponent::resized()
     automixHeader.setBounds(automixArea.removeFromTop(22));
     automixArea.removeFromTop(4);
     startAutomixBtn.setBounds(automixArea.removeFromTop(26).reduced(2, 0));
+    automixArea.removeFromTop(6);
+    smartAutomixBtn.setBounds(automixArea.removeFromTop(26).reduced(2, 0));
     automixArea.removeFromTop(8);
     auto queueRow = automixArea.removeFromTop(18);
     queueTitle.setBounds(queueRow.removeFromLeft(queueRow.getWidth() - 22));
@@ -1143,8 +1161,7 @@ void LibraryComponent::addToAutomixQueue(const std::vector<TrackItem>& tracks)
 }
 
 void LibraryComponent::clearAutomixQueue()
-{
-    automixQueue.clear();
+{    automixQueue.clear();
     clearQueueBtn.setVisible(false);
 
     startAutomixBtn.setCustomColours(juce::Colour::fromRGB(22, 25, 34),
@@ -1154,6 +1171,40 @@ void LibraryComponent::clearAutomixQueue()
 
     queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
     repaint();
+}
+
+void LibraryComponent::setAutomixQueue(const std::vector<TrackItem>& tracks)
+{
+    // Reemplazo total (compone clear + add para reutilizar sus estados UI)
+    automixQueue.clear();
+    clearQueueBtn.setVisible(false);
+    addToAutomixQueue(tracks);
+}
+
+void LibraryComponent::setQueueMessage(const juce::String& message)
+{
+    queueTitle.setText(message, juce::dontSendNotification);
+    repaint();
+}
+
+void LibraryComponent::setSmartBusy(bool busy)
+{
+    smartBusy = busy;
+    startAutomixBtn.setEnabled(!busy);
+    smartAutomixBtn.setEnabled(!busy);
+    refreshLanguage();
+    repaint();
+}
+
+std::vector<TrackItem> LibraryComponent::allLocalTrackItems() const
+{
+    std::vector<TrackItem> items = allTracks;
+    if (usbView != nullptr)
+    {
+        const auto& usbTracks = usbView->getAllTracks();
+        items.insert(items.end(), usbTracks.begin(), usbTracks.end());
+    }
+    return items;
 }
 
 void LibraryComponent::setAutomixRunning(bool running)

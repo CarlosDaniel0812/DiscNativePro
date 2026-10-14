@@ -40,7 +40,7 @@ struct YouTubeVideoComponent::Pimpl
     {
         if (webView == nil) return;
 
-        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay);
+        juce::String html = buildYouTubeEmbedHtml(videoId, autoplay, "http://localhost:3000");
 
         NSString* nsHtml = [NSString stringWithUTF8String:html.toRawUTF8()];
         NSURL* baseUrl = [NSURL URLWithString:@"http://localhost:3000"];

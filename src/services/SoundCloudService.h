@@ -14,7 +14,9 @@ struct SoundCloudTrackItem
     juce::String durationText { "00:00" };
     juce::String artworkUrl;
     juce::String permalinkUrl;
-    juce::String progressiveStreamAuthUrl; // URL from media.transcodings with protocol=progressive
+    juce::String progressiveStreamAuthUrl; // URL from media.transcodings with protocol=progressive (MP3)
+    juce::String hlsStreamAuthUrl;         // URL from media.transcodings with protocol=hls (AAC fMP4)
+    bool isHls { false };
 };
 
 class SoundCloudService
@@ -27,7 +29,7 @@ public:
     static void searchAsync(const juce::String& query,
                             std::function<void(const std::vector<SoundCloudTrackItem>&)> onComplete);
 
-    // Downloads the track MP3 to local cache and returns the local File for deck playback
+    // Downloads the track audio (MP3 or HLS AAC .m4a) to local cache and returns the local File
     static void downloadTrackAsync(const SoundCloudTrackItem& item,
                                   std::function<void(const juce::File&)> onDownloaded);
 
@@ -41,4 +43,7 @@ public:
     // Client ID management
     static juce::String getClientId();
     static void setClientId(const juce::String& id);
+
+private:
+    static juce::File downloadHlsStream(const juce::String& hlsAuthUrl, const juce::String& trackId);
 };

@@ -38,7 +38,7 @@ public:
 
     void refreshDrives();
     void selectDrive(int index);
-    void selectFolder(const juce::String& folderName);
+    const std::vector<TrackItem>& getAllTracks() const { return allUsbTracks; }    void selectFolder(const juce::String& folderName);
     void openManualFolder();
 
 private:

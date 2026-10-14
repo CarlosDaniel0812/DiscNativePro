@@ -51,12 +51,14 @@ private:
     bool automixActive { false };
     int automixActiveDeck { 0 };
     bool automixTransitioning { false };
+    bool smartAutomixBusy { false };
     float automixCrossfaderTarget { 0.0f };
     float automixCrossfaderStep { 0.0f };
 
     void startAutomix(const std::vector<TrackItem>& tracks);
     void stopAutomix();
     void automixAdvance();
+    void startSmartAutomix();
     void openSettings(int targetTab = 0);
 
     // Update notification (GitHub Releases, once per launch)

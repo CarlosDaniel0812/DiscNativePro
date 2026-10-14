@@ -152,6 +152,7 @@ target_include_directories(DiscNativePro
 target_compile_definitions(DiscNativePro
     PRIVATE
         DISCNATIVEPRO_VERSION="${APP_VERSION}"
+        JUCE_USE_MP3AUDIOFORMAT=1
 )
 
 target_link_libraries(DiscNativePro
@@ -221,6 +222,8 @@ elseif(WIN32)
     target_link_libraries(DiscNativePro
         PRIVATE
             psapi
+            mfplat
+            mfreadwrite
             "${microsoft_webview2_SOURCE_DIR}/build/native/${WV2_ARCH}/WebView2LoaderStatic.lib"
     )
 

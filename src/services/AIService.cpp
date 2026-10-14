@@ -269,7 +269,7 @@ juce::String AIService::buildPrompt(const CurrentTrackContext& context)
 
     prompt << juce::String::fromUTF8("Paso 1: identifica el GÉNERO y escena exactos de la pista (ej. Latin Tech, Afro House, Melodic Techno). ")
            << juce::String::fromUTF8("El género manda: toda recomendación debe ser del mismo género o de un estilo hermano que suene en las mismas fiestas.\n");
-    prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 5 canciones que el público y los DJs ponen JUNTO a esta canción ")
+    prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 10 canciones que el público y los DJs ponen JUNTO a esta canción ")
            << "(co-ocurrencia real en sets y sesiones, no canciones vagamente parecidas). "
            << juce::String::fromUTF8("Prioriza las de la lista de audiencia de arriba cuando encajen en género y energía.\n");
     prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado) y energía continua (escala 1-10).\n");
@@ -546,7 +546,7 @@ void AIService::requestRecommendationsAsync(
 
             juce::var genConfig(new juce::DynamicObject());
             genConfig.getDynamicObject()->setProperty("responseMimeType", "application/json");
-            genConfig.getDynamicObject()->setProperty("maxOutputTokens", 1024); // 5 recs + margen anti-truncado
+            genConfig.getDynamicObject()->setProperty("maxOutputTokens", 1600); // 10 recs + margen anti-truncado
             payload.getDynamicObject()->setProperty("generationConfig", genConfig);
         }
         else if (provider == AIProvider::OpenAI)
@@ -567,7 +567,7 @@ void AIService::requestRecommendationsAsync(
             juce::var respFmt(new juce::DynamicObject());
             respFmt.getDynamicObject()->setProperty("type", "json_object");
             payload.getDynamicObject()->setProperty("response_format", respFmt);
-            payload.getDynamicObject()->setProperty("max_tokens", 800);
+            payload.getDynamicObject()->setProperty("max_tokens", 1400);
             payload.getDynamicObject()->setProperty("temperature", 0);
         }
         else if (provider == AIProvider::DeepSeek)
@@ -588,7 +588,7 @@ void AIService::requestRecommendationsAsync(
             juce::var respFmt(new juce::DynamicObject());
             respFmt.getDynamicObject()->setProperty("type", "json_object");
             payload.getDynamicObject()->setProperty("response_format", respFmt);
-            payload.getDynamicObject()->setProperty("max_tokens", 800);
+            payload.getDynamicObject()->setProperty("max_tokens", 1400);
             payload.getDynamicObject()->setProperty("temperature", 0);
         }
         else if (provider == AIProvider::Claude)
@@ -597,7 +597,7 @@ void AIService::requestRecommendationsAsync(
             authHeader = "-H \"x-api-key: " + apiKey + "\" -H \"anthropic-version: 2023-06-01\"";
 
             payload.getDynamicObject()->setProperty("model", modelName);
-            payload.getDynamicObject()->setProperty("max_tokens", 1024);
+            payload.getDynamicObject()->setProperty("max_tokens", 1600);
 
             juce::var messagesArray;
             juce::var msgObj(new juce::DynamicObject());
@@ -625,7 +625,7 @@ void AIService::requestRecommendationsAsync(
             orMessages.append(orMsg);
 
             payload.getDynamicObject()->setProperty("messages", orMessages);
-            payload.getDynamicObject()->setProperty("max_tokens", 1024);
+            payload.getDynamicObject()->setProperty("max_tokens", 1600);
             payload.getDynamicObject()->setProperty("temperature", 0);
         }
 
@@ -702,7 +702,7 @@ std::vector<AIRecommendation> AIService::buildCrowdFallback(const CurrentTrackCo
 {
     std::vector<AIRecommendation> list;
 
-    for (int i = 0; i < context.audienceAlsoPlays.size() && (int)list.size() < 5; ++i)
+    for (int i = 0; i < context.audienceAlsoPlays.size() && (int)list.size() < 10; ++i)
     {
         auto entry = context.audienceAlsoPlays[i].trim();
         if (entry.isEmpty())
