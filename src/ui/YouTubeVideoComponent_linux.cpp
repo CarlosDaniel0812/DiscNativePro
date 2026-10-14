@@ -46,6 +46,13 @@ struct YouTubeVideoComponent::Pimpl
         browser->evaluateJavascript("try { var f = document.querySelector('iframe'); if(f) f.contentWindow.postMessage('{\"event\":\"command\",\"func\":\"pauseVideo\",\"args\":\"\"}', '*'); } catch(e){}");
     }
 
+    void stop()
+    {
+        if (!browser) return;
+        pause();
+        browser->goToURL("about:blank");
+    }
+
     void seek(double seconds)
     {
         if (!browser) return;
@@ -79,6 +86,14 @@ void YouTubeVideoComponent::play()
 void YouTubeVideoComponent::pause()
 {
     pimpl->pause();
+}
+
+void YouTubeVideoComponent::stop()
+{
+    pimpl->stop();
+    currentVideoId.clear();
+    currentVideoTitle.clear();
+    repaint();
 }
 
 void YouTubeVideoComponent::seekTo(double seconds)
