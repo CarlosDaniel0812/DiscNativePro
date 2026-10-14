@@ -821,7 +821,10 @@ void LibraryComponent::paint(juce::Graphics& g)
     g.drawVerticalLine(getWidth() - 250, 0.0f, bounds.getHeight()); // before Automix panel
 
     // Automix Dropzone
-    juce::Rectangle<float> dropArea((float)getWidth() - 240.0f, 74.0f, 230.0f, (float)getHeight() - 86.0f);
+    auto dropArea = automixDropArea.isEmpty()
+        ? juce::Rectangle<float>((float)getWidth() - 242.0f, 126.0f, 234.0f, (float)getHeight() - 134.0f)
+        : automixDropArea;
+
     g.setColour(automixDropHover ? juce::Colour::fromRGB(37, 99, 235).withAlpha(0.1f) : juce::Colour::fromRGB(16, 18, 25));
     g.fillRoundedRectangle(dropArea, 8.0f);
 
@@ -830,9 +833,13 @@ void LibraryComponent::paint(juce::Graphics& g)
 
     if (automixQueue.empty())
     {
-        // Empty state placeholder
+        // Empty state placeholder - vertically centered inside dropArea
         float iconCentreX = dropArea.getCentreX();
-        float iconCentreY = dropArea.getY() + 38.0f;
+        float totalBlockHeight = 32.0f + 10.0f + 18.0f + 4.0f + 30.0f; // ~94px
+        float contentTop = juce::jmax(dropArea.getY() + 14.0f,
+                                      dropArea.getY() + (dropArea.getHeight() - totalBlockHeight) * 0.45f);
+        float iconCentreY = contentTop + 16.0f;
+
         g.setColour(juce::Colour::fromRGB(24, 28, 38));
         g.fillEllipse(iconCentreX - 16.0f, iconCentreY - 16.0f, 32.0f, 32.0f);
         LucideIcons::draw(g, LucideIcons::IconType::Music,
@@ -848,7 +855,7 @@ void LibraryComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour::fromRGB(100, 108, 125));
         g.setFont(juce::FontOptions(9.5f));
         g.drawText(LanguageManager::trUtf8("Usa Shift o Cmd+A para seleccionar\ny arrastrar varias pistas.", "Use Shift or Cmd+A to select\nand drag multiple tracks."),
-                   (int)dropArea.getX() + 8, (int)(iconCentreY + 40.0f), (int)dropArea.getWidth() - 16, 30,
+                   (int)dropArea.getX() + 8, (int)(iconCentreY + 42.0f), (int)dropArea.getWidth() - 16, 30,
                    juce::Justification::centred, true);
     }
     else
@@ -973,8 +980,17 @@ void LibraryComponent::resized()
     smartAutomixBtn.setBounds(automixArea.removeFromTop(26).reduced(2, 0));
     automixArea.removeFromTop(8);
     auto queueRow = automixArea.removeFromTop(18);
-    queueTitle.setBounds(queueRow.removeFromLeft(queueRow.getWidth() - 22));
-    clearQueueBtn.setBounds(queueRow.reduced(2, 0));
+    if (clearQueueBtn.isVisible())
+    {
+        queueTitle.setBounds(queueRow.removeFromLeft(queueRow.getWidth() - 22));
+        clearQueueBtn.setBounds(queueRow.reduced(2, 0));
+    }
+    else
+    {
+        queueTitle.setBounds(queueRow);
+    }
+    automixArea.removeFromTop(6);
+    automixDropArea = automixArea.toFloat();
 
     // 4. Center Track Table Area (remaining width)
     auto centerArea = area.reduced(8, 6);
@@ -1012,7 +1028,7 @@ bool LibraryComponent::isInterestedInDragSource(const SourceDetails& dragSourceD
 
 void LibraryComponent::itemDragEnter(const SourceDetails& dragSourceDetails)
 {
-    bool hover = (dragSourceDetails.localPosition.x >= getWidth() - 260);
+    bool hover = automixDropArea.contains(dragSourceDetails.localPosition.toFloat());
     if (hover != automixDropHover)
     {
         automixDropHover = hover;
@@ -1022,7 +1038,7 @@ void LibraryComponent::itemDragEnter(const SourceDetails& dragSourceDetails)
 
 void LibraryComponent::itemDragMove(const SourceDetails& dragSourceDetails)
 {
-    bool hover = (dragSourceDetails.localPosition.x >= getWidth() - 260);
+    bool hover = automixDropArea.contains(dragSourceDetails.localPosition.toFloat());
     if (hover != automixDropHover)
     {
         automixDropHover = hover;
@@ -1043,8 +1059,8 @@ void LibraryComponent::itemDropped(const SourceDetails& dragSourceDetails)
 {
     automixDropHover = false;
 
-    // Check if the drop happened over the right 260px Automix panel
-    if (dragSourceDetails.localPosition.x >= getWidth() - 260)
+    // Check if the drop happened over the Automix drop zone or panel
+    if (automixDropArea.contains(dragSourceDetails.localPosition.toFloat()) || dragSourceDetails.localPosition.x >= getWidth() - 250)
     {
         juce::StringArray paths;
         paths.addTokens(dragSourceDetails.description.toString(), "\n", "");
@@ -1170,6 +1186,7 @@ void LibraryComponent::clearAutomixQueue()
                                      juce::Colour::fromRGB(38, 43, 56));
 
     queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
+    queueTitle.setTooltip("");
     repaint();
 }
 
@@ -1184,6 +1201,7 @@ void LibraryComponent::setAutomixQueue(const std::vector<TrackItem>& tracks)
 void LibraryComponent::setQueueMessage(const juce::String& message)
 {
     queueTitle.setText(message, juce::dontSendNotification);
+    queueTitle.setTooltip(message);
     repaint();
 }
 

@@ -134,6 +134,7 @@ private:
 
     // Automix state
     std::vector<TrackItem> automixQueue;
+    juce::Rectangle<float> automixDropArea;
     bool automixDropHover { false };
     bool automixRunning { false };
     bool smartBusy { false };
