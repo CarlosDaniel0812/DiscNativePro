@@ -224,6 +224,7 @@ elseif(WIN32)
             psapi
             mfplat
             mfreadwrite
+            mfuuid
             "${microsoft_webview2_SOURCE_DIR}/build/native/${WV2_ARCH}/WebView2LoaderStatic.lib"
     )
 

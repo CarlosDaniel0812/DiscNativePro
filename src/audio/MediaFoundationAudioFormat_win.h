@@ -10,6 +10,10 @@
 #include <mfreadwrite.h>
 #include <propvarutil.h>
 
+#pragma comment(lib, "mfplat.lib")
+#pragma comment(lib, "mfreadwrite.lib")
+#pragma comment(lib, "mfuuid.lib")
+
 using Microsoft::WRL::ComPtr;
 
 class MediaFoundationAudioReader final : public juce::AudioFormatReader
