@@ -1,12 +1,13 @@
 #include "DeckComponent.h"
 #include "YouTubeVideoComponent.h"
 #include "../services/YouTubeService.h"
+#include "../audio/AudioEngine.h"
 #include <cstdio>
 #include <cmath>
 #include <thread>
 
-DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accentColour)
-    : deckIndex(deckNum), deck(player), accent(accentColour),
+DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, AudioEngine& audioEngine, juce::Colour accentColour)
+    : deckIndex(deckNum), deck(player), engine(audioEngine), accent(accentColour),
       overviewWaveform(player, accentColour),
       jogWheel(player, accentColour)
 {
@@ -186,9 +187,14 @@ DeckComponent::DeckComponent(int deckNum, DeckPlayer& player, juce::Colour accen
             if (isVideoMode || !deck.isLoaded())
                 return;
             if (deck.hasHotCue(i))
+            {
+                engine.ensureAudioDeviceRunning();
                 deck.jumpToHotCue(i);
+            }
             else
+            {
                 deck.setHotCue(i, deck.getPosition());
+            }
             refreshHotCueButtons();
         };
         addAndMakeVisible(pad);
@@ -297,10 +303,13 @@ void DeckComponent::loadAudioFile(const juce::File& file)
         overviewWaveform.setVideoProgress(0.0, 0.0);
         if (videoPlayer != nullptr)
         {
-            videoPlayer->pause();
+            videoPlayer->stop();
             videoPlayer->setVisible(false);
         }
         jogWheel.setVisible(true);
+
+        // Garantizar que CoreAudio este activo para el streaming del deck
+        engine.ensureAudioDeviceRunning();
 
         auto cleanTitle = deck.getTrackTitle().replaceCharacter('_', ' ');
         auto trackArtist = deck.getTrackArtist();
@@ -594,9 +603,14 @@ void DeckComponent::togglePlayPause()
     else
     {
         if (deck.isPlaying())
+        {
             deck.pause();
+        }
         else
+        {
+            engine.ensureAudioDeviceRunning();
             deck.play();
+        }
     }
 }
 
@@ -612,6 +626,7 @@ void DeckComponent::triggerCue()
     }
     else
     {
+        engine.ensureAudioDeviceRunning();
         deck.triggerCue();
     }
 }

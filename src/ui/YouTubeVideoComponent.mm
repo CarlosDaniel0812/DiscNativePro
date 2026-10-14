@@ -67,6 +67,13 @@ struct YouTubeVideoComponent::Pimpl
         [webView evaluateJavaScript:@"pause();" completionHandler:nil];
     }
 
+    void stop()
+    {
+        if (webView == nil) return;
+        [webView evaluateJavaScript:@"pause();" completionHandler:nil];
+        [webView loadHTMLString:@"<!DOCTYPE html><html><body style='background:#000'></body></html>" baseURL:nil];
+    }
+
     void seek(double seconds)
     {
         if (webView == nil) return;
@@ -102,6 +109,14 @@ void YouTubeVideoComponent::play()
 void YouTubeVideoComponent::pause()
 {
     pimpl->pause();
+}
+
+void YouTubeVideoComponent::stop()
+{
+    pimpl->stop();
+    currentVideoId.clear();
+    currentVideoTitle.clear();
+    repaint();
 }
 
 void YouTubeVideoComponent::seekTo(double seconds)

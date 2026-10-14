@@ -12,8 +12,8 @@ MainComponent::MainComponent()
       stemsPanel(audioEngine.getMixer()),
       samplerPanel(audioEngine.getSampler(), audioEngine.getFormatManager(),
                    [this]() { return audioEngine.getSampleRate(); }),
-      deck1(0, audioEngine.getDeck(0), juce::Colour::fromRGB(0, 180, 216)),
-      deck2(1, audioEngine.getDeck(1), juce::Colour::fromRGB(148, 163, 184)),
+      deck1(0, audioEngine.getDeck(0), audioEngine, juce::Colour::fromRGB(0, 180, 216)),
+      deck2(1, audioEngine.getDeck(1), audioEngine, juce::Colour::fromRGB(148, 163, 184)),
       mixer(audioEngine),
       library(audioEngine.getFormatManager())
 {

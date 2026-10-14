@@ -11,6 +11,8 @@
 #include "../services/LanguageManager.h"
 #include <array>
 
+class AudioEngine;
+
 class DeckComponent : public juce::Component,
                       public juce::FileDragAndDropTarget,
                       public juce::DragAndDropTarget,
@@ -18,7 +20,7 @@ class DeckComponent : public juce::Component,
                       public LanguageManager::Listener
 {
 public:
-    DeckComponent(int deckNumber, DeckPlayer& player, juce::Colour accentColour);
+    DeckComponent(int deckNumber, DeckPlayer& player, AudioEngine& engine, juce::Colour accentColour);
     ~DeckComponent() override;
 
     void paint(juce::Graphics& g) override;
@@ -74,6 +76,7 @@ private:
 
     int deckIndex;
     DeckPlayer& deck;
+    AudioEngine& engine;
     juce::Colour accent;
     bool isDragOver { false };
     bool isVideoMode { false };

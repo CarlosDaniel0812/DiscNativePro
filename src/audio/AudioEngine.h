@@ -7,7 +7,9 @@
 #include "AudioRecorder.h"
 #include "SamplerBank.h"
 
-class AudioEngine : public juce::AudioIODeviceCallback
+class AudioEngine : public juce::AudioIODeviceCallback,
+                    public juce::ChangeListener,
+                    public juce::AsyncUpdater
 {
 public:
     AudioEngine();
@@ -25,6 +27,13 @@ public:
                                           int numOutputChannels,
                                           int numSamples,
                                           const juce::AudioIODeviceCallbackContext& context) override;
+
+    // ChangeListener & AsyncUpdater interfaces
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+    void handleAsyncUpdate() override;
+
+    // Audio device resilience & auto-recovery
+    bool ensureAudioDeviceRunning();
 
     // Deck & Mixer access
     DeckPlayer& getDeck(int deckIndex) { return deckIndex == 0 ? deck1 : deck2; }
@@ -96,6 +105,9 @@ private:
     enum class CrossfaderZone { Deck1, Center, Deck2 };
     CrossfaderZone lastCrossfaderZone { CrossfaderZone::Center };
     mutable juce::File customRecordDir;
+
+    std::atomic<bool> isShuttingDown { false };
+    std::atomic<bool> isRecoveringDevice { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioEngine)
 };

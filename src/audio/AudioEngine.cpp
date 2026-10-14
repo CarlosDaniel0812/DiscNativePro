@@ -21,6 +21,8 @@ AudioEngine::~AudioEngine()
 
 bool AudioEngine::initialise()
 {
+    isShuttingDown.store(false);
+
     // Start background disk streaming thread (priority normal for smooth file prefetching)
     diskReaderThread.startThread(juce::Thread::Priority::normal);
 
@@ -44,12 +46,16 @@ bool AudioEngine::initialise()
     }
 
     deviceManager.addAudioCallback(this);
+    deviceManager.addChangeListener(this);
     return true;
 }
 
 void AudioEngine::shutdown()
 {
+    isShuttingDown.store(true);
+    cancelPendingUpdate();
     audioRecorder.stopRecording();
+    deviceManager.removeChangeListener(this);
     deviceManager.removeAudioCallback(this);
     deviceManager.closeAudioDevice();
     diskReaderThread.stopThread(2000);
@@ -167,6 +173,82 @@ void AudioEngine::audioDeviceStopped()
     deck1.releaseResources();
     deck2.releaseResources();
     djMixer.reset();
+
+    // Si el dispositivo se detuvo inesperadamente (ej. WebKit o CoreAudio),
+    // programar recuperacion asincrona en el hilo de mensajes
+    if (!isShuttingDown.load())
+    {
+        triggerAsyncUpdate();
+    }
+}
+
+void AudioEngine::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    if (source == &deviceManager && !isShuttingDown.load())
+    {
+        ensureAudioDeviceRunning();
+    }
+}
+
+void AudioEngine::handleAsyncUpdate()
+{
+    if (!isShuttingDown.load())
+    {
+        ensureAudioDeviceRunning();
+    }
+}
+
+bool AudioEngine::ensureAudioDeviceRunning()
+{
+    if (isShuttingDown.load())
+        return false;
+
+    auto* dev = deviceManager.getCurrentAudioDevice();
+    if (dev != nullptr && dev->isPlaying())
+        return true;
+
+    bool expected = false;
+    if (!isRecoveringDevice.compare_exchange_strong(expected, true))
+        return false;
+
+    DBG("[AudioEngine] Audio device is not running (dev=" << (dev != nullptr ? dev->getName() : "null")
+        << ", playing=" << (dev != nullptr && dev->isPlaying()) << "). Recovering...");
+
+    // 1. Si hay un dispositivo existente detenido, cerrarlo explicitamente primero
+    // para que restartLastAudioDevice no sea un no-op en JUCE.
+    deviceManager.closeAudioDevice();
+    deviceManager.restartLastAudioDevice();
+
+    dev = deviceManager.getCurrentAudioDevice();
+    if (dev != nullptr && dev->isPlaying())
+    {
+        DBG("[AudioEngine] Restored audio device successfully via restartLastAudioDevice");
+        isRecoveringDevice.store(false);
+        return true;
+    }
+
+    // 2. Si restartLastAudioDevice fallo, re-inicializar con dispositivos predeterminados
+    auto err = deviceManager.initialiseWithDefaultDevices(0, 4);
+    if (err.isEmpty())
+    {
+        auto setup = deviceManager.getAudioDeviceSetup();
+        if (auto* newDev = deviceManager.getCurrentAudioDevice())
+        {
+            auto outNames = newDev->getOutputChannelNames();
+            int numAvail = outNames.size();
+            currentNumOutputChannels.store(numAvail);
+            setup.outputChannels.setRange(0, juce::jmin(4, numAvail), true);
+            deviceManager.setAudioDeviceSetup(setup, true);
+        }
+        deviceManager.addAudioCallback(this);
+        DBG("[AudioEngine] Restored audio device successfully via initialiseWithDefaultDevices");
+        isRecoveringDevice.store(false);
+        return true;
+    }
+
+    DBG("[AudioEngine] Error restoring audio device: " << err);
+    isRecoveringDevice.store(false);
+    return false;
 }
 
 void AudioEngine::audioDeviceIOCallbackWithContext(const float* const* /*inputChannelData*/,

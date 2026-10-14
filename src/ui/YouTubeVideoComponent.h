@@ -16,6 +16,7 @@ public:
     void loadVideo(const juce::String& videoId, const juce::String& title = {}, bool autoplay = true);
     void play();
     void pause();
+    void stop();
     void seekTo(double seconds);
     void setVolume(float volume0to1); // 0.0f to 1.0f
 
