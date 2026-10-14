@@ -3,10 +3,14 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #if JUCE_WINDOWS
+#include <windows.h>
+#include <wrl/client.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
 #include <propvarutil.h>
+
+using Microsoft::WRL::ComPtr;
 
 class MediaFoundationAudioReader final : public juce::AudioFormatReader
 {
@@ -18,23 +22,23 @@ public:
 
         HRESULT hr = MFCreateSourceReaderFromURL(file.getFullPathName().toWideCharPointer(),
                                                 nullptr,
-                                                reader.resetAndGetPointerAddress());
+                                                reader.ReleaseAndGetAddressOf());
         if (FAILED(hr) || reader == nullptr)
             return;
 
         // Configure reader for uncompressed 16-bit PCM output
-        juce::ComSmartPtr<IMFMediaType> partialType;
-        MFCreateMediaType(partialType.resetAndGetPointerAddress());
+        ComPtr<IMFMediaType> partialType;
+        MFCreateMediaType(partialType.ReleaseAndGetAddressOf());
         partialType->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
         partialType->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
         partialType->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
 
-        hr = reader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, partialType.get());
+        hr = reader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, partialType.Get());
         if (FAILED(hr))
             return;
 
-        juce::ComSmartPtr<IMFMediaType> uncompressedType;
-        hr = reader->GetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, uncompressedType.resetAndGetPointerAddress());
+        ComPtr<IMFMediaType> uncompressedType;
+        hr = reader->GetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, uncompressedType.ReleaseAndGetAddressOf());
         if (FAILED(hr) || uncompressedType == nullptr)
             return;
 
@@ -112,11 +116,11 @@ public:
         {
             DWORD streamFlags = 0;
             LONGLONG timestamp = 0;
-            juce::ComSmartPtr<IMFSample> mfSample;
+            ComPtr<IMFSample> mfSample;
 
             HRESULT hr = reader->ReadSample((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM,
                                             0, nullptr, &streamFlags, &timestamp,
-                                            mfSample.resetAndGetPointerAddress());
+                                            mfSample.ReleaseAndGetAddressOf());
 
             if (FAILED(hr) || (streamFlags & MF_SOURCE_READERF_ENDOFSTREAM))
                 break;
@@ -124,8 +128,8 @@ public:
             if (mfSample == nullptr)
                 continue;
 
-            juce::ComSmartPtr<IMFMediaBuffer> mediaBuffer;
-            hr = mfSample->ConvertToContiguousBuffer(mediaBuffer.resetAndGetPointerAddress());
+            ComPtr<IMFMediaBuffer> mediaBuffer;
+            hr = mfSample->ConvertToContiguousBuffer(mediaBuffer.ReleaseAndGetAddressOf());
             if (FAILED(hr) || mediaBuffer == nullptr)
                 continue;
 
@@ -169,7 +173,7 @@ public:
     }
 
 private:
-    juce::ComSmartPtr<IMFSourceReader> reader;
+    ComPtr<IMFSourceReader> reader;
     juce::int64 currentPosition { 0 };
     std::vector<int16_t> residualBuffer;
 };
