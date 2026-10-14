@@ -538,7 +538,7 @@ void MainComponent::startSmartAutomix()
     library.setSmartBusy(true);
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
-    AIService::requestRecommendationsAsync(ctx, [safeThis, items = std::move(items), playingFile](
+    AIService::requestRecommendationsAsync(ctx, [safeThis, candidates = std::move(items), playingFile](
             const std::vector<AIRecommendation>& recs, const juce::String& errorMsg) {
         if (safeThis == nullptr)
             return;
@@ -554,8 +554,8 @@ void MainComponent::startSmartAutomix()
         // Nombres normalizados una sola vez (no una por rec)
         struct Cand { juce::String norm; const TrackItem* item; };
         std::vector<Cand> cands;
-        cands.reserve(items.size());
-        for (const auto& t : items)
+        cands.reserve(candidates.size());
+        for (const auto& t : candidates)
             cands.push_back({ t.file.getFileNameWithoutExtension().toLowerCase(), &t });
 
         std::vector<TrackItem> matched;

@@ -124,3 +124,34 @@ Borrado de hot cues (`clearHotCue` sin cablear — vaciar = recargar), persisten
   - `pkill -f DiscNativePro || true`
   - `open "build/DiscNativePro_artefacts/Release/DiscNativePro.app"`
   - Confirmado PID activo: `88796`.
+
+---
+
+# Walkthrough — Instalador Formal para Windows con Inno Setup (`Setup.exe`)
+
+## 1. Objetivo
+Reemplazar la distribución en archivo `.zip` comprimido por un instalador profesional ejecutable (`DiscNativePro-Windows-x64-Setup.exe`) generado automáticamente con **Inno Setup** en GitHub Actions, configurando accesos directos, icono de alta calidad, desinstalador en Panel de Control y actualizando el actualizador interno de la app.
+
+## 2. Cambios Realizados
+
+### [NEW] `assets/icon.ico`
+- Generado archivo `.ico` multi-resolución (256x256, 128x128, 64x64, 48x48, 32x32, 16x16) a partir de `assets/icon.png`.
+
+### [NEW] `installer/windows/installer.iss`
+- Script Inno Setup con GUID único (`{D37E9E8C-4F71-4A59-8809-5D8840BA031F}`):
+  - Instalación en `{autopf}\DiscNativePro`.
+  - Icono `assets/icon.ico` en instalador y desinstalador.
+  - Accesos directos en menú Inicio y Escritorio (opcional).
+  - Empaquetado de `DiscNativePro.exe` y `WebView2Loader.dll`.
+  - Opción de lanzar la aplicación al finalizar (`skipifsilent`).
+
+### [MODIFY] `src/services/UpdateService.cpp`
+- Actualizado `kAssetName` bajo `#elif JUCE_WINDOWS` a `"DiscNativePro-Windows-x64-Setup.exe"` para que el diálogo de descarga de nuevas versiones enlace al instalador.
+
+### [MODIFY] `.github/workflows/release.yml`
+- Reemplazado el paso de compresión `.zip` por la invocación de `iscc` (Inno Setup Compiler).
+- Publicación de `DiscNativePro-Windows-x64-Setup.exe` en el GitHub Release.
+
+## 3. Verificación
+- **Compilación**: `cmake --build build -j 2` completado al 100% con 0 errores y 0 warnings.
+- **Auto-Relaunch**: App relanzada activamente con PID `180`.

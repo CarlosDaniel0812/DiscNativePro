@@ -9,7 +9,7 @@ constexpr const char* kLatestReleaseApi =
 #if JUCE_MAC
 constexpr const char* kAssetName = "DiscNativePro-macOS-Universal.zip";
 #elif JUCE_WINDOWS
-constexpr const char* kAssetName = "DiscNativePro-Windows-x64.zip";
+constexpr const char* kAssetName = "DiscNativePro-Windows-x64-Setup.exe";
 #else
 constexpr const char* kAssetName = "DiscNativePro-Linux-x64.tar.gz";
 #endif

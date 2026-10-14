@@ -39,7 +39,7 @@ jobs:
         run: |
           cmake --build build --config Release --parallel
 
-      - name: Package Windows Binary
+      - name: Build Windows Installer (Inno Setup)
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -54,12 +54,26 @@ jobs:
           if ($dllPath) {
             Copy-Item $dllPath -Destination "dist\WebView2Loader.dll"
           }
-          Compress-Archive -Path "dist\*" -DestinationPath "DiscNativePro-Windows-x64.zip" -Force
+
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            if (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe") {
+              $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+            } else {
+              choco install innosetup --no-progress -y
+              $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+            }
+          }
+
+          $ver = "${{ github.ref_name }}"
+          if ($ver.StartsWith("v")) { $ver = $ver.Substring(1) }
+          if ($ver -notmatch '^[0-9]') { $ver = "1.0.0-dev" }
+
+          iscc "/DMyAppVersion=$ver" "installer\windows\installer.iss"
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: DiscNativePro-Windows-x64.zip
+          files: DiscNativePro-Windows-x64-Setup.exe
           generate_release_notes: true
 
   build-linux:
