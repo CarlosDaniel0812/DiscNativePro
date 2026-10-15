@@ -63,6 +63,9 @@ public:
     juce::String getVideoId() const { return loadedVideoId; }
     bool isLoaded() const { return deck.isLoaded() || isVideoMode; }
 
+    static juce::String stripTrackNumberPrefix(const juce::String& filename);
+    static bool splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle);
+
     std::function<void(const juce::File& file, double detectedBpm)> onFileLoaded;
 
 private:
@@ -72,7 +75,6 @@ private:
     // Resuelve título/autor reales cuando solo tenemos el ID (drag yt:ID).
     // No bloquea: carga inmediata + actualización async si el video sigue cargado.
     void resolveVideoMetadataAsync(const juce::String& videoId);
-    static bool splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle);
 
     int deckIndex;
     DeckPlayer& deck;

@@ -1,4 +1,5 @@
 #include "LibraryComponent.h"
+#include "DeckComponent.h"
 #include "YouTubeLibraryView.h"
 #include "UsbLibraryView.h"
 #include "SoundCloudLibraryView.h"
@@ -403,6 +404,20 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         item.artist = artist.isNotEmpty() ? artist : "Artista Local";
         item.album = album.isNotEmpty() ? album : "Local Audio";
 
+        if (item.artist.isEmpty() || item.artist == "Artista Local" || item.artist == "Local Artist")
+        {
+            juce::String splitArtist, splitTitle;
+            if (DeckComponent::splitArtistTitle(item.title, splitArtist, splitTitle))
+            {
+                item.artist = splitArtist;
+                item.title = splitTitle;
+            }
+            else
+            {
+                item.title = DeckComponent::stripTrackNumberPrefix(item.title);
+            }
+        }
+
         // 1. Try reading BPM from metadata tags (ID3 TBPM, bpm, tempo)
         auto bpmStr = reader->metadataValues.getValue("bpm", "");
         if (bpmStr.isEmpty()) bpmStr = reader->metadataValues.getValue("TBPM", "");
@@ -440,7 +455,17 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
     else
     {
         item.title = file.getFileNameWithoutExtension().replaceCharacter('_', ' ');
-        item.artist = "Artista Local";
+        juce::String splitArtist, splitTitle;
+        if (DeckComponent::splitArtistTitle(item.title, splitArtist, splitTitle))
+        {
+            item.artist = splitArtist;
+            item.title = splitTitle;
+        }
+        else
+        {
+            item.title = DeckComponent::stripTrackNumberPrefix(item.title);
+            item.artist = "Artista Local";
+        }
         item.album = "Local Audio";
         item.duration = 0.0;
     }
@@ -510,6 +535,7 @@ void LibraryComponent::setLibraryMode(LibraryMode mode)
     table.setVisible(isLocal);
     automixHeader.setVisible(isLocal);
     startAutomixBtn.setVisible(isLocal);
+    smartAutomixBtn.setVisible(isLocal);
     clearQueueBtn.setVisible(isLocal && !automixQueue.empty());
     queueTitle.setVisible(isLocal);
 
@@ -812,7 +838,7 @@ void LibraryComponent::paint(juce::Graphics& g)
     // Panel vertical dividers
     g.drawVerticalLine(42, 0.0f, bounds.getHeight());  // after icon rail
 
-    if (currentMode == LibraryMode::YouTube || currentMode == LibraryMode::AIMatch)
+    if (currentMode != LibraryMode::Local)
     {
         return;
     }

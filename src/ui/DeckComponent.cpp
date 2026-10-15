@@ -484,9 +484,31 @@ void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
     repaint();
 }
 
+juce::String DeckComponent::stripTrackNumberPrefix(const juce::String& filename)
+{
+    auto s = filename.trimStart();
+    int i = 0;
+    while (i < s.length() && juce::CharacterFunctions::isDigit(s[i]))
+        ++i;
+
+    if (i > 0 && i < s.length())
+    {
+        auto rest = s.substring(i).trimStart();
+        if (rest.startsWith("- ") || rest.startsWith(juce::String::fromUTF8("– ")) || rest.startsWith(juce::String::fromUTF8("— ")))
+            return rest.substring(2).trimStart();
+        if (rest.startsWith(". ") || rest.startsWith("._"))
+            return rest.substring(2).trimStart();
+        if (rest.startsWith(".") || rest.startsWith("-"))
+            return rest.substring(1).trimStart();
+        if (s[i] == ' ')
+            return rest;
+    }
+    return s;
+}
+
 bool DeckComponent::splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle)
 {
-    auto t = in.trim();
+    auto t = stripTrackNumberPrefix(in).trim();
     // Quitar coletillas comunes que ensucian el match de género (ignora mayúsculas)
     static const char* suffixes[] = { " (Official Video)", " (Official Music Video)", " [Official Video]",
                                       " (Official Audio)", " (Lyric Video)", " (Visualizer)",

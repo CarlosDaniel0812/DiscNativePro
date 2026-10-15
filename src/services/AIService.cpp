@@ -244,37 +244,66 @@ juce::String AIService::buildPrompt(const CurrentTrackContext& context)
         prompt << "- BPM Detectado: " << juce::String(context.bpm, 1) << "\n";
     if (context.key.isNotEmpty() && context.key != "--" && context.key != "YT")
         prompt << "- Tonalidad (Camelot): " << context.key << "\n";
-    // Fuente + señales de audiencia (lo más importante va primero en el prompt)
-    if (context.audienceAlsoPlays.size() > 0)
+    if (!context.libraryCandidates.empty())
     {
-        prompt << juce::String::fromUTF8("- La audiencia de esta pista también escucha/mezcla: ");
-        for (int i = 0; i < context.audienceAlsoPlays.size(); ++i)
+        prompt << "\n" << juce::String::fromUTF8("El DJ tiene las siguientes canciones en su biblioteca local disponible:\n");
+        for (const auto& c : context.libraryCandidates)
         {
-            if (i > 0) prompt << " | ";
-            prompt << "\"" << context.audienceAlsoPlays[i] << "\"";
+            prompt << "[" << juce::String(c.index) << "] \"" << c.title << "\" - " << c.artist;
+            if (c.bpm > 0.0)
+                prompt << " (BPM: " << juce::String(c.bpm, 1) << ")";
+            if (c.key.isNotEmpty() && c.key != "--")
+                prompt << " [Key: " << c.key << "]";
+            if (c.folder.isNotEmpty() && c.folder != "Todas las Pistas")
+                prompt << " {Carpeta: " << c.folder << "}";
+            prompt << "\n";
         }
         prompt << "\n";
+        prompt << juce::String::fromUTF8("INSTRUCCIÓN CRÍTICA Y OBLIGATORIA:\n");
+        prompt << juce::String::fromUTF8("Debes armar la mejor sesión de AutoMix seleccionando ÚNICAMENTE canciones de la lista de canciones disponibles en la biblioteca local del DJ de arriba.\n");
+        prompt << juce::String::fromUTF8("Elige hasta 10 canciones de esa lista (o todas las que consideres coherentes si hay menos de 10) ")
+               << juce::String::fromUTF8("y ordénalas en la secuencia perfecta para mezclar de manera fluida.\n");
+        prompt << juce::String::fromUTF8("Criterios de selección y orden:\n");
+        prompt << juce::String::fromUTF8("1. Mismo artista o mismo estilo/género/carpeta.\n");
+        prompt << juce::String::fromUTF8("2. Tempo (BPM) compatible y transición armónica (Camelot: mismo tono, relativo o +/-1).\n");
+        prompt << juce::String::fromUTF8("3. Mantén o sube la energía de la sesión para el público.\n");
+        prompt << juce::String::fromUTF8("En el JSON de respuesta, pon en 'title' y 'artist' EXACTAMENTE los mismos nombres que aparecen en la lista numerada de arriba.\n");
+        prompt << juce::String::fromUTF8("PROHIBIDO recomendar canciones que no estén en la lista de disponibles.\n");
     }
-    if (context.videoTags.size() > 0)
+    else
     {
-        prompt << "- Etiquetas del video: ";
-        for (int i = 0; i < context.videoTags.size(); ++i)
+        // Fuente + señales de audiencia (lo más importante va primero en el prompt)
+        if (context.audienceAlsoPlays.size() > 0)
         {
-            if (i > 0) prompt << ", ";
-            prompt << context.videoTags[i];
+            prompt << juce::String::fromUTF8("- La audiencia de esta pista también escucha/mezcla: ");
+            for (int i = 0; i < context.audienceAlsoPlays.size(); ++i)
+            {
+                if (i > 0) prompt << " | ";
+                prompt << "\"" << context.audienceAlsoPlays[i] << "\"";
+            }
+            prompt << "\n";
+        }
+        if (context.videoTags.size() > 0)
+        {
+            prompt << "- Etiquetas del video: ";
+            for (int i = 0; i < context.videoTags.size(); ++i)
+            {
+                if (i > 0) prompt << ", ";
+                prompt << context.videoTags[i];
+            }
+            prompt << "\n";
         }
         prompt << "\n";
-    }
-    prompt << "\n";
 
-    prompt << juce::String::fromUTF8("Paso 1: identifica el GÉNERO y escena exactos de la pista (ej. Latin Tech, Afro House, Melodic Techno). ")
-           << juce::String::fromUTF8("El género manda: toda recomendación debe ser del mismo género o de un estilo hermano que suene en las mismas fiestas.\n");
-    prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 10 canciones que el público y los DJs ponen JUNTO a esta canción ")
-           << "(co-ocurrencia real en sets y sesiones, no canciones vagamente parecidas). "
-           << juce::String::fromUTF8("Prioriza las de la lista de audiencia de arriba cuando encajen en género y energía.\n");
-    prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado) y energía continua (escala 1-10).\n");
-    prompt << juce::String::fromUTF8("Si NO reconoces la pista (título genérico, artista desconocido o es muy nueva), pon \"known\": false en TODAS ")
-           << juce::String::fromUTF8("y recomienda por género y energía en vez de inventar afinidades.\n");
+        prompt << juce::String::fromUTF8("Paso 1: identifica el GÉNERO y escena exactos de la pista (ej. Latin Tech, Afro House, Melodic Techno). ")
+               << juce::String::fromUTF8("El género manda: toda recomendación debe ser del mismo género o de un estilo hermano que suene en las mismas fiestas.\n");
+        prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 10 canciones que el público y los DJs ponen JUNTO a esta canción ")
+               << "(co-ocurrencia real en sets y sesiones, no canciones vagamente parecidas). "
+               << juce::String::fromUTF8("Prioriza las de la lista de audiencia de arriba cuando encajen en género y energía.\n");
+        prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado) y energía continua (escala 1-10).\n");
+        prompt << juce::String::fromUTF8("Si NO reconoces la pista (título genérico, artista desconocido o es muy nueva), pon \"known\": false en TODAS ")
+               << juce::String::fromUTF8("y recomienda por género y energía en vez de inventar afinidades.\n");
+    }
     prompt << juce::String::fromUTF8("PROHIBIDO markdown, cercas ``` o texto fuera del JSON. "
                                      "Solo el objeto, nada más. Reasons de máximo 120 caracteres.\n");
     prompt << juce::String::fromUTF8("Responde ÚNICAMENTE un objeto JSON válido con la clave 'recommendations', exactamente así:\n")

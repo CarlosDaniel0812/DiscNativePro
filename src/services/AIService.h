@@ -32,6 +32,16 @@ struct AIRecommendation
     juce::File localFile;
 };
 
+struct CandidateTrackInfo
+{
+    int index { 0 };
+    juce::String title;
+    juce::String artist;
+    double bpm { 0.0 };
+    juce::String key;
+    juce::String folder;
+};
+
 struct CurrentTrackContext
 {
     juce::String title;
@@ -43,6 +53,7 @@ struct CurrentTrackContext
     juce::String videoId; // YouTube ID cuando isVideo (para señal de audiencia)
     juce::StringArray audienceAlsoPlays; // "la audiencia también ve/mezcla" (scrape Up Next)
     juce::StringArray videoTags; // tags de videos.list (solo con API key oficial)
+    std::vector<CandidateTrackInfo> libraryCandidates; // Pistas locales disponibles en la biblioteca
 };
 
 class AIService

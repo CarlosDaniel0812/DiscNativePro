@@ -5,6 +5,8 @@
 #include "../services/LanguageManager.h"
 #include "../services/AIService.h"
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <algorithm>
+#include <cmath>
 
 MainComponent::MainComponent()
     : midiManager(audioEngine),
@@ -467,19 +469,123 @@ void MainComponent::stopAutomix()
 
 namespace
 {
-// Cruce rec→archivo con nombres pre-normalizados (1 minúscula por archivo,
-// no por rec: escala a bibliotecas grandes sin costo de IA extra).
-bool smartMatchesFile(const juce::String& normFileName,
-                      const juce::String& cleanTitle,
-                      const juce::String& cleanArtist)
+// Camelot Wheel harmonic compatibility:
+// Same key, relative major/minor (e.g. 8A <-> 8B), or +/- 1 modulo 12 (e.g. 8A <-> 9A, 12A <-> 1A)
+bool areCamelotKeysCompatible(const juce::String& k1, const juce::String& k2)
 {
-    if (cleanTitle.isEmpty())
+    if (k1.isEmpty() || k2.isEmpty() || k1 == "--" || k2 == "--" || k1 == "YT" || k2 == "YT")
         return false;
-    if (normFileName.contains(cleanTitle))
+
+    auto s1 = k1.trim().toUpperCase();
+    auto s2 = k2.trim().toUpperCase();
+    if (s1 == s2)
         return true;
-    return cleanArtist.isNotEmpty()
-        && normFileName.contains(cleanArtist)
-        && normFileName.contains(cleanTitle.substring(0, 5));
+
+    int num1 = s1.retainCharacters("0123456789").getIntValue();
+    int num2 = s2.retainCharacters("0123456789").getIntValue();
+    juce::String let1 = s1.retainCharacters("AB");
+    juce::String let2 = s2.retainCharacters("AB");
+
+    if (num1 < 1 || num1 > 12 || num2 < 1 || num2 > 12 || let1.isEmpty() || let2.isEmpty())
+        return false;
+
+    // Same number, relative major/minor (e.g. 8A <-> 8B)
+    if (num1 == num2 && let1 != let2)
+        return true;
+
+    // Same letter, +/- 1 modulo 12 (e.g. 12 <-> 1, 8 <-> 9)
+    if (let1 == let2)
+    {
+        int diff = std::abs(num1 - num2);
+        if (diff == 1 || diff == 11)
+            return true;
+    }
+
+    return false;
+}
+
+// Scorer for local candidate tracks: prioritizes artist affinity, same folder/genre, BPM proximity, and harmonic key
+int scoreTrackCandidate(const TrackItem& candidate,
+                       const juce::String& currentTitle,
+                       const juce::String& currentArtist,
+                       double currentBpm,
+                       const juce::String& currentKey,
+                       const juce::String& currentFolder)
+{
+    juce::ignoreUnused(currentTitle);
+    int score = 0;
+    auto candArtist = candidate.artist.trim().toLowerCase();
+    auto curArtist = currentArtist.trim().toLowerCase();
+
+    // 1. Artist affinity
+    if (curArtist.isNotEmpty() && candArtist.isNotEmpty())
+    {
+        if (candArtist == curArtist)
+            score += 60;
+        else if (candArtist.contains(curArtist) || curArtist.contains(candArtist))
+            score += 45;
+    }
+
+    // 2. Folder / Genre affinity
+    if (currentFolder.isNotEmpty() && candidate.folder.isNotEmpty() && candidate.folder != "Todas las Pistas")
+    {
+        if (candidate.folder.equalsIgnoreCase(currentFolder))
+            score += 35;
+    }
+
+    // 3. BPM proximity
+    if (currentBpm > 20.0 && candidate.bpm > 20.0)
+    {
+        double diff = std::abs(candidate.bpm - currentBpm) / currentBpm;
+        if (diff <= 0.04)
+            score += 25;
+        else if (diff <= 0.08)
+            score += 15;
+        else if (diff <= 0.15)
+            score += 5;
+    }
+
+    // 4. Harmonic Key (Camelot)
+    if (areCamelotKeysCompatible(currentKey, candidate.key))
+    {
+        if (candidate.key.equalsIgnoreCase(currentKey))
+            score += 20;
+        else
+            score += 15;
+    }
+
+    return score;
+}
+
+// Flexible matching between AI recommendation and candidate track item
+bool trackMatchesRecommendation(const TrackItem& track,
+                                const juce::String& recTitle,
+                                const juce::String& recArtist)
+{
+    auto rTitle = recTitle.toLowerCase().trim();
+    auto rArtist = recArtist.toLowerCase().trim();
+    if (rTitle.isEmpty())
+        return false;
+
+    auto tTitle = track.title.toLowerCase().trim();
+    auto tArtist = track.artist.toLowerCase().trim();
+    auto fileName = track.file.getFileNameWithoutExtension().toLowerCase();
+
+    // 1. Direct title contains or filename contains
+    if (tTitle.isNotEmpty() && (tTitle.contains(rTitle) || rTitle.contains(tTitle)))
+        return true;
+    if (fileName.contains(rTitle))
+        return true;
+
+    // 2. Artist match + partial title
+    if (rArtist.isNotEmpty() && (tArtist.contains(rArtist) || rArtist.contains(tArtist) || fileName.contains(rArtist)))
+    {
+        auto prefix = rTitle.substring(0, std::min(5, rTitle.length()));
+        if (prefix.isNotEmpty() && (tTitle.contains(prefix) || fileName.contains(prefix)))
+            return true;
+    }
+
+    return false;
 }
 } // namespace
 
@@ -508,13 +614,6 @@ void MainComponent::startSmartAutomix()
         return;
     }
 
-    if (!AIService::isEnabled() || !AIService::isConfigured())
-    {
-        library.setQueueMessage(LanguageManager::trUtf8("Configura tu API key de IA en Ajustes para el AutoMix IA",
-                                                        "Set your AI API key in Settings for Smart AutoMix"));
-        return;
-    }
-
     auto items = library.allLocalTrackItems();
     if (items.empty())
     {
@@ -523,82 +622,189 @@ void MainComponent::startSmartAutomix()
         return;
     }
 
+    const juce::File playingFile = audioEngine.getDeck(activeDeckIdx).getCurrentFile();
+    auto currentTitle = activeDeckComp.getTrackTitle();
+    auto currentArtist = activeDeckComp.getTrackArtist();
+    double currentBpm = activeDeckComp.getBpm();
+    auto currentKey = activeDeckComp.getTrackKey();
+
+    // Detect folder of playing track
+    juce::String currentFolder;
+    for (const auto& it : items)
+    {
+        if (!playingFile.getFullPathName().isEmpty() && it.file == playingFile)
+        {
+            currentFolder = it.folder;
+            if (currentArtist.isEmpty() || currentArtist == "Artista Local")
+                currentArtist = it.artist;
+            if (currentTitle.isEmpty())
+                currentTitle = it.title;
+            break;
+        }
+    }
+    if (currentFolder.isEmpty() && playingFile.exists())
+    {
+        currentFolder = playingFile.getParentDirectory().getFileName();
+    }
+
+    std::vector<TrackItem> validCandidates;
+    validCandidates.reserve(items.size());
+    for (const auto& item : items)
+    {
+        if (!playingFile.getFullPathName().isEmpty() && item.file == playingFile)
+            continue;
+        validCandidates.push_back(item);
+    }
+
+    if (validCandidates.empty())
+    {
+        library.setQueueMessage(LanguageManager::trUtf8("No hay más pistas en tu biblioteca para continuar el AutoMix",
+                                                        "No more tracks in your library to continue AutoMix"));
+        return;
+    }
+
+    // Score and rank all candidate tracks
+    struct ScoredTrack {
+        int score;
+        int originalIndex;
+        TrackItem item;
+    };
+    std::vector<ScoredTrack> scored;
+    scored.reserve(validCandidates.size());
+    for (size_t i = 0; i < validCandidates.size(); ++i)
+    {
+        int s = scoreTrackCandidate(validCandidates[i], currentTitle, currentArtist, currentBpm, currentKey, currentFolder);
+        scored.push_back({ s, (int)i, validCandidates[i] });
+    }
+
+    std::stable_sort(scored.begin(), scored.end(), [](const ScoredTrack& a, const ScoredTrack& b) {
+        return a.score > b.score;
+    });
+
+    std::vector<TrackItem> fallbackCandidates;
+    fallbackCandidates.reserve(10);
+    for (size_t i = 0; i < std::min((size_t)10, scored.size()); ++i)
+        fallbackCandidates.push_back(scored[i].item);
+
+    // If AI is not configured or disabled, start local harmonic automix immediately
+    if (!AIService::isEnabled() || !AIService::isConfigured())
+    {
+        library.setAutomixQueue(fallbackCandidates);
+        library.setQueueMessage(
+            LanguageManager::trUtf8("AutoMix Local (IA no configurada): armada por afinidad y armonía",
+                                    "Local AutoMix (AI not configured): built by affinity & harmony"));
+        startAutomix(fallbackCandidates);
+        return;
+    }
+
     CurrentTrackContext ctx;
     ctx.activeDeck = activeDeckIdx;
-    ctx.title = activeDeckComp.getTrackTitle();
-    ctx.artist = activeDeckComp.getTrackArtist();
-    ctx.bpm = activeDeckComp.getBpm();
-    ctx.key = activeDeckComp.getTrackKey();
+    ctx.title = currentTitle;
+    ctx.artist = currentArtist;
+    ctx.bpm = currentBpm;
+    ctx.key = currentKey;
     ctx.isVideo = activeDeckComp.isVideoModeActive();
     ctx.videoId = activeDeckComp.getVideoId();
 
-    const juce::File playingFile = audioEngine.getDeck(activeDeckIdx).getCurrentFile();
+    // Populate top ~30 library candidates for AI
+    size_t numToPass = std::min((size_t)30, scored.size());
+    ctx.libraryCandidates.reserve(numToPass);
+    for (size_t i = 0; i < numToPass; ++i)
+    {
+        CandidateTrackInfo info;
+        info.index = (int)(i + 1);
+        info.title = scored[i].item.title;
+        info.artist = scored[i].item.artist;
+        info.bpm = scored[i].item.bpm;
+        info.key = scored[i].item.key;
+        info.folder = scored[i].item.folder;
+        ctx.libraryCandidates.push_back(std::move(info));
+    }
 
     smartAutomixBusy = true;
     library.setSmartBusy(true);
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
-    AIService::requestRecommendationsAsync(ctx, [safeThis, candidates = std::move(items), playingFile](
+    AIService::requestRecommendationsAsync(ctx, [safeThis, fallback = std::move(fallbackCandidates), allCandidates = std::move(validCandidates)](
             const std::vector<AIRecommendation>& recs, const juce::String& errorMsg) {
         if (safeThis == nullptr)
             return;
         safeThis->smartAutomixBusy = false;
         safeThis->library.setSmartBusy(false);
 
-        if (!errorMsg.isEmpty())
-        {
-            safeThis->library.setQueueMessage(errorMsg);
-            return;
-        }
-
-        // Nombres normalizados una sola vez (no una por rec)
-        struct Cand { juce::String norm; const TrackItem* item; };
-        std::vector<Cand> cands;
-        cands.reserve(candidates.size());
-        for (const auto& t : candidates)
-            cands.push_back({ t.file.getFileNameWithoutExtension().toLowerCase(), &t });
-
         std::vector<TrackItem> matched;
-        for (const auto& r : recs)
+
+        // If AI succeeded with recommendations, match them against candidates
+        if (errorMsg.isEmpty() && !recs.empty())
         {
-            if ((int)matched.size() >= 10)
-                break;
-            auto cleanTitle = r.title.toLowerCase().trim();
-            auto cleanArtist = r.artist.toLowerCase().trim();
-            for (const auto& c : cands)
+            for (const auto& r : recs)
             {
-                if (!playingFile.getFullPathName().isEmpty()
-                    && c.item->file == playingFile)
-                    continue; // el que suena no se encola
-                bool already = false;
-                for (const auto& m : matched)
-                    if (m.file == c.item->file) { already = true; break; }
-                if (already)
-                    continue;
-                if (smartMatchesFile(c.norm, cleanTitle, cleanArtist))
-                {
-                    matched.push_back(*c.item);
+                if ((int)matched.size() >= 10)
                     break;
+
+                for (const auto& cand : allCandidates)
+                {
+                    bool alreadyIn = false;
+                    for (const auto& m : matched)
+                    {
+                        if (m.file == cand.file)
+                        {
+                            alreadyIn = true;
+                            break;
+                        }
+                    }
+                    if (alreadyIn)
+                        continue;
+
+                    if (trackMatchesRecommendation(cand, r.title, r.artist))
+                    {
+                        matched.push_back(cand);
+                        break;
+                    }
                 }
             }
         }
 
+        // Fallback: If AI returned 0 matches, errored or timed out, use top local candidates
         if (matched.empty())
         {
+            matched = fallback;
+            safeThis->library.setAutomixQueue(matched);
             safeThis->library.setQueueMessage(
-                LanguageManager::trUtf8("Sin coincidencias en tu biblioteca (IA sugirió ", "No matches in your library (AI suggested ")
-                + juce::String((int)recs.size())
-                + LanguageManager::trUtf8("). Prueba con otro tema", "). Try another track"));
+                LanguageManager::trUtf8("AutoMix Local: Selección por afinidad, tempo y tonalidad (",
+                                        "Local AutoMix: Selected by affinity, tempo & key (")
+                + juce::String((int)matched.size())
+                + LanguageManager::trUtf8(" pistas)", " tracks)"));
+            safeThis->startAutomix(matched);
             return;
         }
 
+        // If AI returned fewer than 10 tracks, complete with top local fallback candidates
+        if ((int)matched.size() < 10 && !fallback.empty())
+        {
+            for (const auto& fb : fallback)
+            {
+                if ((int)matched.size() >= 10)
+                    break;
+                bool alreadyIn = false;
+                for (const auto& m : matched)
+                {
+                    if (m.file == fb.file)
+                    {
+                        alreadyIn = true;
+                        break;
+                    }
+                }
+                if (!alreadyIn)
+                    matched.push_back(fb);
+            }
+        }
+
         safeThis->library.setAutomixQueue(matched);
-        if ((int)matched.size() < 10)
-            safeThis->library.setQueueMessage(
-                LanguageManager::trUtf8("AutoMix IA: ", "Smart AutoMix: ")
-                + juce::String((int)matched.size())
-                + LanguageManager::trUtf8(" de 10 (tu biblioteca da para esto)",
-                                          " of 10 (that's what your library has)"));
+        safeThis->library.setQueueMessage(
+            LanguageManager::trUtf8("AutoMix IA: ", "Smart AutoMix: ")
+            + juce::String((int)matched.size())
+            + LanguageManager::trUtf8(" pistas seleccionadas", " tracks selected"));
         safeThis->startAutomix(matched);
     });
 }
