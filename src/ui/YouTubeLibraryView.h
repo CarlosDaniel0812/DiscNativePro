@@ -33,12 +33,15 @@ public:
     void performSearch(const juce::String& query);
     void handlePasteUrl();
     void updateApiStatus();
+    void updateModeButtons();
 
     std::function<void(int deckIndex, const YouTubeSearchResult& video)> onLoadTrack;
     std::function<void()> onOpenSettings;
 
 private:
     juce::Label headerTitle;
+    DjButton audioModeBtn { "Audio" };
+    DjButton videoModeBtn { "Video" };
     juce::TextEditor searchBox;
     DjButton searchBtn;
     DjButton pasteUrlBtn;

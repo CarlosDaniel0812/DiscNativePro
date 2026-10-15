@@ -27,6 +27,22 @@ public:
     static bool isVideoAutoplayEnabled();
     static void setVideoAutoplayEnabled(bool enabled);
 
+    // Modo de reproducción de YouTube: Audio nativo (true) vs Video Web (false)
+    static bool isAudioPlaybackMode();
+    static void setAudioPlaybackMode(bool audioMode);
+
+    // Guardado persistente de canciones descargadas en disco local (default: false)
+    static bool isSaveDownloadsEnabled();
+    static void setSaveDownloadsEnabled(bool enabled);
+
+    // Carpeta local de descargas (por defecto: ~/Music/DiscNativePro/Downloads)
+    static juce::File getDefaultDownloadsFolder();
+    static juce::File getDownloadsFolder();
+    static void setDownloadsFolder(const juce::File& folder);
+
+    // Sanitización de nombres de archivo para el sistema de archivos
+    static juce::String sanitizeFilename(const juce::String& name);
+
     // Synchronous search (safe to call on background thread)
     static std::vector<YouTubeSearchResult> search(const juce::String& query);
 

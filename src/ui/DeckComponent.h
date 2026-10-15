@@ -83,6 +83,9 @@ private:
     bool isDragOver { false };
     bool isVideoMode { false };
     bool isVideoPlaying { false };
+    bool isExtractingAudio { false };
+    float extractionProgress { 0.0f };
+    juce::String extractionStatus;
     juce::String loadedVideoId;
     std::unique_ptr<class YouTubeVideoComponent> videoPlayer;
     // ponytail: reloj virtual para modo video — el iframe YT no reporta

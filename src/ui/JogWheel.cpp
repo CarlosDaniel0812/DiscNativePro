@@ -21,6 +21,15 @@ void JogWheel::setTrackInfo(const juce::String& title, double bpm, juce::Colour 
     repaint();
 }
 
+void JogWheel::setCustomCoverArt(const juce::Image& image)
+{
+    if (image.isValid())
+    {
+        coverArtImage = image;
+        repaint();
+    }
+}
+
 void JogWheel::updateAngle()
 {
     if (deck.isPlaying())

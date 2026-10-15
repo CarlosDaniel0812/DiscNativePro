@@ -269,6 +269,94 @@ void SettingsModalComponent::setupGeneralTab()
     bodyContent.addChildComponent(recResetBtn);
 
     updateRecordingFolderUI();
+
+    // Section 4: Descargas de YouTube y Archivos Locales
+    downloadsSectionLabel.setText(juce::String::fromUTF8("Descargas de YouTube y Archivos Locales"), juce::dontSendNotification);
+    downloadsSectionLabel.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    downloadsSectionLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 180, 216));
+    bodyContent.addChildComponent(downloadsSectionLabel);
+
+    saveDownloadsToggle.setButtonText(juce::String::fromUTF8("Guardar canciones descargadas en disco local (persistente)"));
+    saveDownloadsToggle.setToggleState(YouTubeService::isSaveDownloadsEnabled(), juce::dontSendNotification);
+    saveDownloadsToggle.setColour(juce::ToggleButton::textColourId, juce::Colours::white.withAlpha(0.85f));
+    saveDownloadsToggle.onClick = [this]() {
+        bool enabled = saveDownloadsToggle.getToggleState();
+        YouTubeService::setSaveDownloadsEnabled(enabled);
+        updateDownloadsFolderUI();
+    };
+    bodyContent.addChildComponent(saveDownloadsToggle);
+
+    downloadsFolderDescLabel.setText(juce::String::fromUTF8("Carpeta de destino para canciones descargadas (.m4a AAC):"), juce::dontSendNotification);
+    downloadsFolderDescLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
+    downloadsFolderDescLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(160, 165, 180));
+    bodyContent.addChildComponent(downloadsFolderDescLabel);
+
+    downloadsFolderEditor.setReadOnly(true);
+    downloadsFolderEditor.setColour(juce::TextEditor::backgroundColourId, juce::Colour::fromRGB(17, 19, 26));
+    downloadsFolderEditor.setColour(juce::TextEditor::textColourId, juce::Colour::fromRGB(220, 225, 235));
+    downloadsFolderEditor.setColour(juce::TextEditor::outlineColourId, juce::Colour::fromRGB(38, 43, 58));
+    downloadsFolderEditor.setFont(juce::FontOptions("Menlo", 10.5f, juce::Font::plain));
+    bodyContent.addChildComponent(downloadsFolderEditor);
+
+    downloadsBrowseBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
+    downloadsBrowseBtn.setText(juce::String::fromUTF8("Examinar..."));
+    downloadsBrowseBtn.setFontSize(10.5f);
+    downloadsBrowseBtn.setCornerRadius(5.0f);
+    downloadsBrowseBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                                      juce::Colour::fromRGB(200, 205, 220),
+                                      juce::Colour::fromRGB(0, 180, 216),
+                                      juce::Colour::fromRGB(45, 50, 68));
+    downloadsBrowseBtn.onClick = [this]() {
+        fileChooser = std::make_unique<juce::FileChooser>(
+            LanguageManager::trUtf8("Seleccionar Carpeta para Descargas", "Select Downloads Folder"),
+            YouTubeService::getDownloadsFolder(),
+            "");
+        auto folderFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories;
+        fileChooser->launchAsync(folderFlags, [this](const juce::FileChooser& fc) {
+            auto result = fc.getResult();
+            if (result.isDirectory())
+            {
+                YouTubeService::setDownloadsFolder(result);
+                updateDownloadsFolderUI();
+                if (onDownloadsFolderChanged)
+                    onDownloadsFolderChanged();
+            }
+        });
+    };
+    bodyContent.addChildComponent(downloadsBrowseBtn);
+
+    downloadsOpenBtn.setIcon(LucideIcons::IconType::Folder, 12.0f);
+    downloadsOpenBtn.setText(juce::String::fromUTF8("Abrir Carpeta"));
+    downloadsOpenBtn.setFontSize(10.5f);
+    downloadsOpenBtn.setCornerRadius(5.0f);
+    downloadsOpenBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                                    juce::Colour::fromRGB(200, 205, 220),
+                                    juce::Colour::fromRGB(74, 222, 128),
+                                    juce::Colour::fromRGB(45, 50, 68));
+    downloadsOpenBtn.onClick = []() {
+        auto dir = YouTubeService::getDownloadsFolder();
+        if (!dir.exists())
+            dir.createDirectory();
+        dir.revealToUser();
+    };
+    bodyContent.addChildComponent(downloadsOpenBtn);
+
+    downloadsResetBtn.setText(juce::String::fromUTF8("Por defecto"));
+    downloadsResetBtn.setFontSize(10.5f);
+    downloadsResetBtn.setCornerRadius(5.0f);
+    downloadsResetBtn.setCustomColours(juce::Colour::fromRGB(26, 28, 36),
+                                     juce::Colour::fromRGB(140, 145, 160),
+                                     juce::Colour::fromRGB(200, 205, 220),
+                                     juce::Colour::fromRGB(40, 44, 58));
+    downloadsResetBtn.onClick = [this]() {
+        YouTubeService::setDownloadsFolder(YouTubeService::getDefaultDownloadsFolder());
+        updateDownloadsFolderUI();
+        if (onDownloadsFolderChanged)
+            onDownloadsFolderChanged();
+    };
+    bodyContent.addChildComponent(downloadsResetBtn);
+
+    updateDownloadsFolderUI();
 }
 
 void SettingsModalComponent::updateRecordingFolderUI()
@@ -276,6 +364,20 @@ void SettingsModalComponent::updateRecordingFolderUI()
     auto dir = audioEngine.getRecordingDirectory();
     recFolderEditor.setText(dir.getFullPathName(), juce::dontSendNotification);
     recFolderEditor.setCaretPosition(recFolderEditor.getText().length());
+}
+
+void SettingsModalComponent::updateDownloadsFolderUI()
+{
+    auto dir = YouTubeService::getDownloadsFolder();
+    downloadsFolderEditor.setText(dir.getFullPathName(), juce::dontSendNotification);
+    downloadsFolderEditor.setCaretPosition(downloadsFolderEditor.getText().length());
+
+    bool isEnabled = saveDownloadsToggle.getToggleState();
+    downloadsFolderEditor.setEnabled(isEnabled);
+    downloadsBrowseBtn.setEnabled(isEnabled);
+    downloadsOpenBtn.setEnabled(isEnabled);
+    downloadsResetBtn.setEnabled(isEnabled);
+    downloadsFolderDescLabel.setAlpha(isEnabled ? 1.0f : 0.5f);
 }
 
 void SettingsModalComponent::refreshLanguage()
@@ -337,6 +439,13 @@ void SettingsModalComponent::refreshLanguage()
     recBrowseBtn.setText(LanguageManager::trUtf8("Examinar...", "Browse..."));
     recOpenBtn.setText(LanguageManager::trUtf8("Abrir Carpeta", "Open Folder"));
     recResetBtn.setText(LanguageManager::trUtf8("Por defecto", "Default"));
+
+    downloadsSectionLabel.setText(LanguageManager::trUtf8("Descargas de YouTube y Archivos Locales", "YouTube Downloads & Local Files"), juce::dontSendNotification);
+    saveDownloadsToggle.setButtonText(LanguageManager::trUtf8("Guardar canciones descargadas en disco local (persistente)", "Save downloaded songs to local storage (persistent)"));
+    downloadsFolderDescLabel.setText(LanguageManager::trUtf8("Carpeta de destino para canciones descargadas (.m4a AAC):", "Destination folder for downloaded tracks (.m4a AAC):"), juce::dontSendNotification);
+    downloadsBrowseBtn.setText(LanguageManager::trUtf8("Examinar...", "Browse..."));
+    downloadsOpenBtn.setText(LanguageManager::trUtf8("Abrir Carpeta", "Open Folder"));
+    downloadsResetBtn.setText(LanguageManager::trUtf8("Por defecto", "Default"));
 
     appInfoLabel.setText(LanguageManager::trUtf8("DiscNativePro DJ Workstation v1.0.0 • Motor C++20 nativo con JUCE 8, CoreAudio y SIMD DSP.", "DiscNativePro DJ Workstation v1.0.0 • Native C++20 engine with JUCE 8, CoreAudio & SIMD DSP."), juce::dontSendNotification);
 
@@ -1032,8 +1141,20 @@ void SettingsModalComponent::updateTabVisibility()
     recBrowseBtn.setVisible(isGeneral);
     recOpenBtn.setVisible(isGeneral);
     recResetBtn.setVisible(isGeneral);
+
+    downloadsSectionLabel.setVisible(isGeneral);
+    saveDownloadsToggle.setVisible(isGeneral);
+    downloadsFolderDescLabel.setVisible(isGeneral);
+    downloadsFolderEditor.setVisible(isGeneral);
+    downloadsBrowseBtn.setVisible(isGeneral);
+    downloadsOpenBtn.setVisible(isGeneral);
+    downloadsResetBtn.setVisible(isGeneral);
+
     if (isGeneral)
+    {
         updateRecordingFolderUI();
+        updateDownloadsFolderUI();
+    }
 
     // Devices component (Tab 1)
     bool isDevices = (activeTab == 1);
@@ -1505,7 +1626,27 @@ void SettingsModalComponent::resized()
         recBrowseBtn.setBounds(recRow.removeFromRight(96));
         recRow.removeFromRight(6);
         recFolderEditor.setBounds(recRow);
-        gArea.removeFromTop(8);
+        gArea.removeFromTop(12);
+
+        // Section 4: Descargas de YouTube y Archivos Locales
+        downloadsSectionLabel.setBounds(gArea.removeFromTop(18));
+        gArea.removeFromTop(4);
+
+        saveDownloadsToggle.setBounds(gArea.removeFromTop(22));
+        gArea.removeFromTop(4);
+
+        downloadsFolderDescLabel.setBounds(gArea.removeFromTop(16));
+        gArea.removeFromTop(4);
+
+        auto dlRow = gArea.removeFromTop(24);
+        downloadsResetBtn.setBounds(dlRow.removeFromRight(82));
+        dlRow.removeFromRight(6);
+        downloadsOpenBtn.setBounds(dlRow.removeFromRight(102));
+        dlRow.removeFromRight(6);
+        downloadsBrowseBtn.setBounds(dlRow.removeFromRight(96));
+        dlRow.removeFromRight(6);
+        downloadsFolderEditor.setBounds(dlRow);
+        gArea.removeFromTop(12);
 
         appInfoLabel.setBounds(gArea.removeFromTop(18));
     }

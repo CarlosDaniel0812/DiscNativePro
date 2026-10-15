@@ -37,7 +37,10 @@ public:
         Usb,
         SoundCloud,
         YouTube,
-        Bookmark
+        Bookmark,
+        Check,
+        Download,
+        Video
     };
 
     // Draw the icon vector scaled into the destination rectangle

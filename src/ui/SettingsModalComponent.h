@@ -26,6 +26,7 @@ public:
     void setActiveTab(int tabIndex);
 
     std::function<void()> onClose;
+    std::function<void()> onDownloadsFolderChanged;
 
 private:
     void setupGeneralTab();
@@ -83,6 +84,17 @@ private:
     DjButton recBrowseBtn;
     DjButton recOpenBtn;
     DjButton recResetBtn;
+
+    // --- Tab 0: Sección Descargas de YouTube y Archivos Locales ---
+    juce::Label downloadsSectionLabel;
+    juce::ToggleButton saveDownloadsToggle;
+    juce::Label downloadsFolderDescLabel;
+    juce::TextEditor downloadsFolderEditor;
+    DjButton downloadsBrowseBtn;
+    DjButton downloadsOpenBtn;
+    DjButton downloadsResetBtn;
+    void updateDownloadsFolderUI();
+
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     // --- Tab 1: Dispositivos Controls ---

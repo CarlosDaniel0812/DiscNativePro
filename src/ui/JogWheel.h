@@ -10,6 +10,7 @@ public:
     ~JogWheel() override;
 
     void setTrackInfo(const juce::String& title, double bpm, juce::Colour deckColor);
+    void setCustomCoverArt(const juce::Image& image);
     void setAccentColour(juce::Colour c) { accent = c; repaint(); }
     void updateAngle();
 

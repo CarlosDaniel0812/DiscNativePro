@@ -476,6 +476,37 @@ juce::Path LucideIcons::getPath(IconType icon)
             p.closeSubPath();
             break;
         }
+
+        case IconType::Check:
+        {
+            p.startNewSubPath(4.0f, 12.0f);
+            p.lineTo(9.5f, 17.5f);
+            p.lineTo(20.0f, 6.5f);
+            break;
+        }
+
+        case IconType::Download:
+        {
+            p.startNewSubPath(12.0f, 3.0f);
+            p.lineTo(12.0f, 15.0f);
+            p.startNewSubPath(7.0f, 10.0f);
+            p.lineTo(12.0f, 15.0f);
+            p.lineTo(17.0f, 10.0f);
+            p.startNewSubPath(4.0f, 19.0f);
+            p.lineTo(20.0f, 19.0f);
+            break;
+        }
+
+        case IconType::Video:
+        {
+            p.addRoundedRectangle(2.0f, 5.0f, 13.0f, 14.0f, 2.0f);
+            p.startNewSubPath(15.0f, 10.0f);
+            p.lineTo(22.0f, 6.0f);
+            p.lineTo(22.0f, 18.0f);
+            p.lineTo(15.0f, 14.0f);
+            p.closeSubPath();
+            break;
+        }
     }
 
     return p;

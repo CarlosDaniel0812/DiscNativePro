@@ -1,6 +1,8 @@
 #include "DeckComponent.h"
 #include "YouTubeVideoComponent.h"
 #include "../services/YouTubeService.h"
+#include "../services/YouTubeAudioDownloader.h"
+#include "../services/ThumbnailCache.h"
 #include "../audio/AudioEngine.h"
 #include <cstdio>
 #include <cmath>
@@ -296,6 +298,8 @@ void DeckComponent::loadAudioFile(const juce::File& file)
     {
         isVideoMode = false;
         isVideoPlaying = false;
+        isExtractingAudio = false;
+        extractionProgress = 0.0f;
         loadedVideoId.clear();
         videoPositionSeconds = 0.0;
         videoDurationSeconds = 0.0;
@@ -416,11 +420,15 @@ void DeckComponent::itemDropped(const SourceDetails& dragSourceDetails)
     juce::String desc = dragSourceDetails.description.toString();
     if (desc.startsWith("yt:"))
     {
-        juce::String videoId = desc.substring(3);
+        auto parts = juce::StringArray::fromTokens(desc.substring(3), "\t", "");
         YouTubeSearchResult res;
-        res.id = videoId;
-        res.title = "YouTube Video (" + videoId + ")";
-        res.artist = "YouTube DJ";
+        res.id = parts.size() > 0 ? parts[0] : "";
+        res.title = parts.size() > 1 && parts[1].isNotEmpty() ? parts[1] : ("YouTube (" + res.id + ")");
+        res.artist = parts.size() > 2 && parts[2].isNotEmpty() ? parts[2] : "YouTube";
+        res.thumbnailUrl = parts.size() > 3 ? parts[3] : "";
+        res.durationSeconds = parts.size() > 4 ? parts[4].getIntValue() : 180;
+        res.durationText = parts.size() > 5 ? parts[5] : "3:00";
+
         loadYouTubeVideo(res);
         repaint();
         return;
@@ -436,30 +444,73 @@ void DeckComponent::itemDropped(const SourceDetails& dragSourceDetails)
 void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
 {
     const bool autoplay = YouTubeService::isVideoAutoplayEnabled();
-    isVideoMode = true;
-    isVideoPlaying = autoplay; // consistente con lo que el embed va a hacer
-    loadedVideoId = result.id;
-    videoPositionSeconds = 0.0;
-    videoDurationSeconds = result.durationSeconds > 0 ? (double)result.durationSeconds : 0.0;
-    videoLastTickMs = juce::Time::getMillisecondCounter();
-    overviewWaveform.setVideoMode(true);
-    overviewWaveform.setVideoProgress(0.0, videoDurationSeconds);
-    deck.stop();
+    const bool audioMode = YouTubeService::isAudioPlaybackMode();
 
-    if (videoPlayer == nullptr)
+    if (!audioMode)
     {
-        videoPlayer = std::make_unique<YouTubeVideoComponent>(deckIndex);
-        addAndMakeVisible(*videoPlayer);
+        // Modo Video: reproductor web WKWebView
+        isVideoMode = true;
+        isVideoPlaying = autoplay;
+        isExtractingAudio = false;
+        extractionProgress = 0.0f;
+        loadedVideoId = result.id;
+        videoPositionSeconds = 0.0;
+        videoDurationSeconds = result.durationSeconds > 0 ? (double)result.durationSeconds : 0.0;
+        videoLastTickMs = juce::Time::getMillisecondCounter();
+        overviewWaveform.setVideoMode(true);
+        overviewWaveform.setVideoProgress(0.0, videoDurationSeconds);
+        deck.stop();
+
+        if (videoPlayer == nullptr)
+        {
+            videoPlayer = std::make_unique<YouTubeVideoComponent>(deckIndex);
+            addAndMakeVisible(*videoPlayer);
+        }
+
+        videoPlayer->loadVideo(result.id, result.title, autoplay);
+        videoPlayer->setVisible(true);
+        jogWheel.setVisible(false);
+
+        auto displayTitle = result.title.isNotEmpty() ? result.title : ("YouTube Video (" + result.id + ")");
+        auto displayArtist = result.artist.isNotEmpty() ? result.artist : "YouTube DJ";
+        juce::String splitArtist, splitTitle;
+        if (splitArtistTitle(displayTitle, splitArtist, splitTitle)
+            && (displayArtist == "YouTube DJ" || displayArtist == "YouTube" || displayArtist == "YouTube Creator"
+                || displayArtist.isEmpty() || !splitArtist.equalsIgnoreCase(displayArtist)))
+        {
+            displayArtist = splitArtist;
+            displayTitle = splitTitle;
+        }
+
+        titleLabel.setText(displayTitle, juce::dontSendNotification);
+        artistLabel.setText(displayArtist, juce::dontSendNotification);
+        bpmLabel.setText("128.0", juce::dontSendNotification);
+        pitchBpmLabel.setText("128.0", juce::dontSendNotification);
+        timeRemainingLabel.setText(result.durationText.isNotEmpty() ? result.durationText : "--:--", juce::dontSendNotification);
+        keyBadge.setText("YT", juce::dontSendNotification);
+
+        if (displayTitle.startsWith("YouTube Video ("))
+            resolveVideoMetadataAsync(result.id);
+
+        refreshHotCueButtons();
+        resized();
+        repaint();
+        return;
     }
 
-    videoPlayer->loadVideo(result.id, result.title, autoplay);
-    videoPlayer->setVisible(true);
-    jogWheel.setVisible(false);
+    // Modo Audio nativo: Jog Wheel, CoreAudio y extracción
+    loadedVideoId = result.id;
+    isVideoMode = false;
+    isVideoPlaying = false;
+    if (videoPlayer != nullptr)
+    {
+        videoPlayer->stop();
+        videoPlayer->setVisible(false);
+    }
+    jogWheel.setVisible(true);
 
     auto displayTitle = result.title.isNotEmpty() ? result.title : ("YouTube Video (" + result.id + ")");
     auto displayArtist = result.artist.isNotEmpty() ? result.artist : "YouTube DJ";
-    // Muchos títulos de YouTube vienen como "Artista - Título (Official Video)".
-    // Se adopta el prefijo aunque haya artista: el canal-uploader rara vez es el artista real.
     juce::String splitArtist, splitTitle;
     if (splitArtistTitle(displayTitle, splitArtist, splitTitle)
         && (displayArtist == "YouTube DJ" || displayArtist == "YouTube" || displayArtist == "YouTube Creator"
@@ -468,20 +519,121 @@ void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
         displayArtist = splitArtist;
         displayTitle = splitTitle;
     }
+
     titleLabel.setText(displayTitle, juce::dontSendNotification);
     artistLabel.setText(displayArtist, juce::dontSendNotification);
-    bpmLabel.setText("128.0", juce::dontSendNotification);
-    pitchBpmLabel.setText("128.0", juce::dontSendNotification);
     timeRemainingLabel.setText(result.durationText.isNotEmpty() ? result.durationText : "--:--", juce::dontSendNotification);
-    keyBadge.setText("YT", juce::dontSendNotification);
 
-    // Si solo tenemos el ID (drop yt:ID), resolver metadata real sin bloquear
+    // 1. Check if audio is already in local cache
+    auto cachedFile = YouTubeAudioDownloader::getInstance().getCachedAudioFile(result.id);
+    if (cachedFile.existsAsFile())
+    {
+        isExtractingAudio = false;
+        extractionProgress = 0.0f;
+        loadAudioFile(cachedFile);
+
+        // Keep clean YouTube title & artist
+        titleLabel.setText(displayTitle, juce::dontSendNotification);
+        artistLabel.setText(displayArtist, juce::dontSendNotification);
+        jogWheel.setTrackInfo(displayTitle, deck.getBpm(), accent);
+
+        // Asynchronously load thumbnail if not yet in memory
+        auto thumb = ThumbnailCache::getInstance().getThumbnail(result.id, result.thumbnailUrl,
+            [safe = juce::Component::SafePointer<DeckComponent>(this), vid = result.id](const juce::String& readyId) {
+                if (safe == nullptr || safe->loadedVideoId != vid) return;
+                auto img = ThumbnailCache::getInstance().getThumbnail(readyId, "");
+                if (img.isValid())
+                {
+                    safe->coverArtImage = img;
+                    safe->jogWheel.setCustomCoverArt(img);
+                    safe->repaint();
+                }
+            });
+        if (thumb.isValid())
+        {
+            coverArtImage = thumb;
+            jogWheel.setCustomCoverArt(thumb);
+        }
+
+        if (autoplay)
+            deck.play();
+
+        resized();
+        repaint();
+        return;
+    }
+
+    // 2. Audio needs extraction: stop previous sound and show progress banner on deck
+    deck.stop();
+    isExtractingAudio = true;
+    extractionProgress = 0.05f;
+    extractionStatus = LanguageManager::trUtf8("Descargando audio de YouTube...", "Downloading YouTube audio...");
+    overviewWaveform.setVideoMode(false);
+    overviewWaveform.setVideoProgress(0.0, 0.0);
+    jogWheel.setTrackInfo(displayTitle, 0.0, accent);
+
+    // Prefetch thumbnail so it's ready when extraction finishes
+    auto thumb = ThumbnailCache::getInstance().getThumbnail(result.id, result.thumbnailUrl,
+        [safe = juce::Component::SafePointer<DeckComponent>(this), vid = result.id](const juce::String& readyId) {
+            if (safe == nullptr || safe->loadedVideoId != vid) return;
+            auto img = ThumbnailCache::getInstance().getThumbnail(readyId, "");
+            if (img.isValid())
+            {
+                safe->coverArtImage = img;
+                safe->jogWheel.setCustomCoverArt(img);
+                safe->repaint();
+            }
+        });
+    if (thumb.isValid())
+    {
+        coverArtImage = thumb;
+        jogWheel.setCustomCoverArt(thumb);
+    }
+
     if (displayTitle.startsWith("YouTube Video ("))
         resolveVideoMetadataAsync(result.id);
 
-    refreshHotCueButtons();
     resized();
     repaint();
+
+    YouTubeAudioDownloader::getInstance().downloadAudioAsync(
+        result.id,
+        displayTitle,
+        displayArtist,
+        [safe = juce::Component::SafePointer<DeckComponent>(this), vid = result.id](float progress, const juce::String& status) {
+            if (safe == nullptr || safe->loadedVideoId != vid) return;
+            safe->extractionProgress = progress;
+            safe->extractionStatus = status;
+            safe->repaint();
+        },
+        [safe = juce::Component::SafePointer<DeckComponent>(this), vid = result.id, displayTitle, displayArtist, autoplay](const juce::File& file, bool success, const juce::String& error) {
+            if (safe == nullptr || safe->loadedVideoId != vid) return;
+            safe->isExtractingAudio = false;
+
+            if (success && file.existsAsFile())
+            {
+                safe->loadAudioFile(file);
+                safe->titleLabel.setText(displayTitle, juce::dontSendNotification);
+                safe->artistLabel.setText(displayArtist, juce::dontSendNotification);
+                safe->jogWheel.setTrackInfo(displayTitle, safe->deck.getBpm(), safe->accent);
+
+                auto img = ThumbnailCache::getInstance().getThumbnail(vid, "");
+                if (img.isValid())
+                {
+                    safe->coverArtImage = img;
+                    safe->jogWheel.setCustomCoverArt(img);
+                }
+
+                if (autoplay)
+                    safe->deck.play();
+            }
+            else
+            {
+                safe->extractionStatus = error.isNotEmpty() ? error : LanguageManager::trUtf8("Fallo al descargar audio", "Download failed");
+            }
+            safe->repaint();
+        }
+    );
 }
 
 juce::String DeckComponent::stripTrackNumberPrefix(const juce::String& filename)
@@ -885,6 +1037,33 @@ void DeckComponent::paintOverChildren(juce::Graphics& g)
         g.setFont(juce::FontOptions(10.5f));
         g.drawText(LanguageManager::trUtf8("Pista de Biblioteca o Archivo MP3/WAV", "Library Track or MP3/WAV File"),
                    banner, juce::Justification::centred, false);
+    }
+
+    // Audio Extraction Progress Indicator (YouTube / Stream download)
+    if (isExtractingAudio)
+    {
+        auto bounds = getLocalBounds().toFloat();
+        juce::Rectangle<float> banner(bounds.getCentreX() - 145.0f, bounds.getCentreY() - 36.0f, 290.0f, 72.0f);
+        g.setColour(juce::Colour::fromRGB(12, 14, 18).withAlpha(0.95f));
+        g.fillRoundedRectangle(banner, 8.0f);
+        g.setColour(accent);
+        g.drawRoundedRectangle(banner, 8.0f, 1.5f);
+
+        auto textRect = banner.removeFromTop(38.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::FontOptions(12.5f, juce::Font::bold));
+        g.drawText(extractionStatus.isNotEmpty() ? extractionStatus : LanguageManager::trUtf8("Descargando audio de YouTube...", "Downloading YouTube audio..."),
+                   textRect, juce::Justification::centred, true);
+
+        auto pBar = banner.reduced(24.0f, 8.0f);
+        g.setColour(juce::Colour::fromRGB(32, 36, 48));
+        g.fillRoundedRectangle(pBar, 3.0f);
+        if (extractionProgress > 0.0f)
+        {
+            auto fillBar = pBar.withWidth(pBar.getWidth() * juce::jlimit(0.0f, 1.0f, extractionProgress));
+            g.setColour(accent);
+            g.fillRoundedRectangle(fillBar, 3.0f);
+        }
     }
 }
 

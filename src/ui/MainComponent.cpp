@@ -165,6 +165,25 @@ MainComponent::MainComponent()
     library.onSmartAutomix = [this]() {
         startSmartAutomix();
     };
+    library.onAutomixQueueChanged = [this](const std::vector<TrackItem>& newQueue) {
+        if (!automixActive)
+            return;
+        automixPlaylist = newQueue;
+        if (automixPlaylist.empty())
+        {
+            stopAutomix();
+            return;
+        }
+        int freeDeck = (automixActiveDeck == 0) ? 1 : 0;
+        int nextIndex = automixCurrentIndex + 1;
+        if (nextIndex >= 0 && nextIndex < (int)automixPlaylist.size())
+        {
+            if (freeDeck == 0)
+                deck1.loadAudioFile(automixPlaylist[static_cast<size_t>(nextIndex)].file);
+            else
+                deck2.loadAudioFile(automixPlaylist[static_cast<size_t>(nextIndex)].file);
+        }
+    };
     library.onOpenSettings = [this](int targetTab) {
         openSettings(targetTab);
     };
@@ -432,25 +451,56 @@ void MainComponent::startAutomix(const std::vector<TrackItem>& tracks)
         return;
 
     automixPlaylist = tracks;
-    automixCurrentIndex = 0;
-    automixActiveDeck = 0;
     automixTransitioning = false;
     automixActive = true;
 
     // Activate Tempo Blend for automatic BPM synchronization
     audioEngine.setTempoBlend(true);
 
-    // Load first track into Deck 1 and start playing
-    deck1.loadAudioFile(automixPlaylist[0].file);
-    audioEngine.getDeck(0).play();
+    bool d1Playing = deck1.isPlaying() || deck1.isVideoPlayingActive() || audioEngine.getDeck(0).isPlaying();
+    bool d2Playing = deck2.isPlaying() || deck2.isVideoPlayingActive() || audioEngine.getDeck(1).isPlaying();
 
-    // Crossfader fully on Deck 1
-    audioEngine.setCrossfader(-1.0f);
-
-    // Preload second track into Deck 2 (if available)
-    if (automixPlaylist.size() >= 2)
+    if (d1Playing || d2Playing)
     {
-        deck2.loadAudioFile(automixPlaylist[1].file);
+        // A deck is already playing music: do not interrupt or wipe it!
+        int playingDeck = 0;
+        if (d2Playing && !d1Playing)
+            playingDeck = 1;
+        else if (d1Playing && !d2Playing)
+            playingDeck = 0;
+        else
+            playingDeck = (audioEngine.getMixer().getCrossfader() > 0.0f) ? 1 : 0;
+
+        int otherDeck = (playingDeck == 0) ? 1 : 0;
+
+        // Ensure crossfader is fully open on the deck currently playing
+        audioEngine.setCrossfader((playingDeck == 0) ? -1.0f : 1.0f);
+
+        // Preload first automix track into the other (idle) deck in paused/cue state
+        if (otherDeck == 0)
+            deck1.loadAudioFile(automixPlaylist[0].file);
+        else
+            deck2.loadAudioFile(automixPlaylist[0].file);
+
+        automixActiveDeck = playingDeck;
+        automixCurrentIndex = -1; // Indicates current playing track is user's original song; next transition will play automixPlaylist[0]
+        library.setAutomixPlayingIndex(-1);
+    }
+    else
+    {
+        // Cold start from silence: load track 0 in Deck 1 and start immediately
+        automixActiveDeck = 0;
+        automixCurrentIndex = 0;
+        deck1.loadAudioFile(automixPlaylist[0].file);
+        audioEngine.getDeck(0).play();
+        audioEngine.setCrossfader(-1.0f);
+
+        if (automixPlaylist.size() >= 2)
+        {
+            deck2.loadAudioFile(automixPlaylist[1].file);
+        }
+
+        library.setAutomixPlayingIndex(0);
     }
 
     library.setAutomixRunning(true);
@@ -464,6 +514,7 @@ void MainComponent::stopAutomix()
     automixPlaylist.clear();
 
     library.setAutomixRunning(false);
+    library.setAutomixPlayingIndex(-1);
     library.clearAutomixQueue();
 }
 
@@ -653,6 +704,17 @@ void MainComponent::startSmartAutomix()
     {
         if (!playingFile.getFullPathName().isEmpty() && item.file == playingFile)
             continue;
+
+        // Ignorar audios de menos de 1 minuto (60 segundos) para excluir samples, loops y jingles
+        double dur = item.duration;
+        if (dur <= 0.0 && item.file.existsAsFile())
+        {
+            if (auto r = std::unique_ptr<juce::AudioFormatReader>(audioEngine.getFormatManager().createReaderFor(item.file)))
+                dur = (double)r->lengthInSamples / r->sampleRate;
+        }
+        if (dur > 0.0 && dur < 60.0)
+            continue;
+
         validCandidates.push_back(item);
     }
 
@@ -825,6 +887,7 @@ void MainComponent::automixAdvance()
         // Wait for current track to end, then clean up
         juce::Timer::callAfterDelay(1000, [this]() {
             library.setAutomixRunning(false);
+            library.setAutomixPlayingIndex(-1);
             library.clearAutomixQueue();
         });
         return;
@@ -854,6 +917,7 @@ void MainComponent::automixAdvance()
     automixTransitioning = true;
     automixActiveDeck = nextDeck;
     automixCurrentIndex = nextTrackIndex;
+    library.setAutomixPlayingIndex(automixCurrentIndex);
 }
 
 void MainComponent::openSettings(int targetTab)
@@ -876,6 +940,10 @@ void MainComponent::openSettings(int targetTab)
     opt.useNativeTitleBar = true;
     opt.escapeKeyTriggersCloseButton = true;
     settingsWindow = opt.launchAsync();
+
+    modal->onDownloadsFolderChanged = [this]() {
+        library.scanDownloadsFolder();
+    };
 
     modal->onClose = [this]() {
         if (settingsWindow != nullptr)

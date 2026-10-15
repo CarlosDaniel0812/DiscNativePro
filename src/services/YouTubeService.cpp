@@ -90,6 +90,116 @@ void YouTubeService::setVideoAutoplayEnabled(bool enabled)
     file.replaceWithText(juce::JSON::toString(json));
 }
 
+bool YouTubeService::isAudioPlaybackMode()
+{
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject() && json.hasProperty("youtubePlaybackMode"))
+            return json["youtubePlaybackMode"].toString().equalsIgnoreCase("audio");
+    }
+    return true; // default ON: modo Audio nativo con descargas y control total
+}
+
+void YouTubeService::setAudioPlaybackMode(bool audioMode)
+{
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+        obj->setProperty("youtubePlaybackMode", audioMode ? "audio" : "video");
+
+    file.replaceWithText(juce::JSON::toString(json));
+}
+
+bool YouTubeService::isSaveDownloadsEnabled()
+{
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject() && json.hasProperty("saveDownloadedTracks"))
+            return (bool)json["saveDownloadedTracks"];
+    }
+    return false; // Por defecto desactivado
+}
+
+void YouTubeService::setSaveDownloadsEnabled(bool enabled)
+{
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+        obj->setProperty("saveDownloadedTracks", enabled);
+
+    file.replaceWithText(juce::JSON::toString(json));
+}
+
+juce::File YouTubeService::getDefaultDownloadsFolder()
+{
+    return juce::File::getSpecialLocation(juce::File::userMusicDirectory)
+               .getChildFile("DiscNativePro")
+               .getChildFile("Downloads");
+}
+
+juce::File YouTubeService::getDownloadsFolder()
+{
+    auto file = getSettingsFile();
+    if (file.existsAsFile())
+    {
+        auto json = juce::JSON::parse(file);
+        if (json.isObject() && json.hasProperty("downloadsFolder"))
+        {
+            auto path = json["downloadsFolder"].toString().trim();
+            if (path.isNotEmpty())
+                return juce::File(path);
+        }
+    }
+    return getDefaultDownloadsFolder();
+}
+
+void YouTubeService::setDownloadsFolder(const juce::File& folder)
+{
+    auto file = getSettingsFile();
+    juce::var json;
+    if (file.existsAsFile())
+        json = juce::JSON::parse(file);
+    if (!json.isObject())
+        json = juce::var(new juce::DynamicObject());
+
+    if (auto* obj = json.getDynamicObject())
+        obj->setProperty("downloadsFolder", folder.getFullPathName());
+
+    file.replaceWithText(juce::JSON::toString(json));
+}
+
+juce::String YouTubeService::sanitizeFilename(const juce::String& name)
+{
+    juce::String safe = name;
+    safe = safe.replaceCharacter('/', '-');
+    safe = safe.replaceCharacter(':', '-');
+    safe = safe.replaceCharacter('\\', '-');
+    safe = safe.replaceCharacter('*', ' ');
+    safe = safe.replaceCharacter('?', ' ');
+    safe = safe.replaceCharacter('"', '\'');
+    safe = safe.replaceCharacter('<', ' ');
+    safe = safe.replaceCharacter('>', ' ');
+    safe = safe.replaceCharacter('|', '-');
+    safe = safe.trim();
+    if (safe.isEmpty())
+        safe = "Track";
+    return safe;
+}
+
 juce::String YouTubeService::extractVideoId(const juce::String& input)
 {
     auto clean = input.trim();

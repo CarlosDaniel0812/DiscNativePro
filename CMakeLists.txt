@@ -72,6 +72,8 @@ target_sources(DiscNativePro
         src/midi/MidiManager.cpp
         src/services/YouTubeService.h
         src/services/YouTubeService.cpp
+        src/services/YouTubeAudioDownloader.h
+        src/services/YouTubeAudioDownloader.cpp
         src/services/ThumbnailCache.h
         src/services/ThumbnailCache.cpp
         src/services/AIService.h
@@ -183,6 +185,18 @@ if(APPLE)
             "-framework WebKit"
             "-framework Cocoa"
     )
+
+    set(YT_DLP_CANDIDATE "$ENV{HOME}/Library/Application Support/DiscNativePro/bin/yt-dlp")
+    if (EXISTS "${YT_DLP_CANDIDATE}")
+        add_custom_command(TARGET DiscNativePro POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                "$<TARGET_BUNDLE_DIR:DiscNativePro>/Contents/Resources"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${YT_DLP_CANDIDATE}"
+                "$<TARGET_BUNDLE_DIR:DiscNativePro>/Contents/Resources/yt-dlp"
+            COMMENT "Bundling yt-dlp into app resources"
+        )
+    endif()
 elseif(WIN32)
     # Descargar automáticamente el SDK oficial de Microsoft.Web.WebView2
     include(FetchContent)

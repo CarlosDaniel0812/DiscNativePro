@@ -61,6 +61,7 @@ public:
     void importFiles();
     void importFolder();
     void scanFolderRecursive(const juce::File& folder);
+    void scanDownloadsFolder();
     void addTrack(const juce::File& file, const juce::String& folderTag = "Todas las Pistas", const juce::String& rootFolder = {}, bool isDemo = false);
     void filterTracks(const juce::String& query);
     void unsyncFolder(const juce::String& folderPath);
@@ -70,6 +71,11 @@ public:
     void clearAutomixQueue();
     void setAutomixQueue(const std::vector<TrackItem>& tracks);
     void setAutomixRunning(bool running);
+    void setAutomixPlayingIndex(int index);
+    void deleteTrackFromAutomixQueue(int index);
+    void reorderAutomixQueue(int fromIndex, int toIndex);
+    void handleAutomixDropTracks(const juce::String& description);
+    const std::vector<TrackItem>& getAutomixQueue() const { return automixQueue; }
     void setQueueMessage(const juce::String& message);
     void setSmartBusy(bool busy);
     bool isSmartBusy() const { return smartBusy; }
@@ -94,6 +100,7 @@ public:
     std::function<void(const std::vector<TrackItem>&)> onStartAutomix;
     std::function<void()> onStopAutomix;
     std::function<void()> onSmartAutomix;
+    std::function<void(const std::vector<TrackItem>&)> onAutomixQueueChanged;
     std::function<void(int targetTab)> onOpenSettings;
 
 private:
@@ -138,6 +145,14 @@ private:
     bool automixDropHover { false };
     bool automixRunning { false };
     bool smartBusy { false };
+    int automixPlayingIndex { -1 };
+
+    class AutomixQueueView;
+    std::unique_ptr<AutomixQueueView> automixQueueView;
+
+    class DownloadsEmptyOverlay;
+    std::unique_ptr<DownloadsEmptyOverlay> downloadsEmptyOverlay;
+    void updateDownloadsEmptyState();
 
     // Hardware browsing state
     bool isBrowsingFolders { false };

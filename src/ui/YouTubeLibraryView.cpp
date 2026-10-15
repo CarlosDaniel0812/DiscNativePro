@@ -1,4 +1,5 @@
 #include "YouTubeLibraryView.h"
+#include "../services/YouTubeAudioDownloader.h"
 
 namespace
 {
@@ -43,15 +44,137 @@ namespace
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(YtLoadButtonsComponent)
     };
+
+    class YtDownloadButtonComponent : public juce::Component
+    {
+    public:
+        YtDownloadButtonComponent()
+        {
+            btn.setFontSize(10.5f);
+            btn.setCornerRadius(4.0f);
+            btn.onClick = [this]() {
+                if (videoId.isEmpty()) return;
+                if (YouTubeAudioDownloader::getInstance().getCachedAudioFile(videoId).existsAsFile())
+                    return;
+                if (YouTubeAudioDownloader::getInstance().isDownloading(videoId))
+                    return;
+
+                updateState(0.05f, LanguageManager::trUtf8("Descargando...", "Downloading..."), true);
+                YouTubeAudioDownloader::getInstance().downloadAudioAsync(
+                    videoId,
+                    trackTitle,
+                    trackArtist,
+                    [safe = juce::Component::SafePointer<YtDownloadButtonComponent>(this), id = videoId](float progress, const juce::String& /*status*/) {
+                        if (safe == nullptr || safe->videoId != id) return;
+                        safe->updateState(progress, juce::String((int)(progress * 100)) + "%", true);
+                    },
+                    [safe = juce::Component::SafePointer<YtDownloadButtonComponent>(this), id = videoId](const juce::File& file, bool success, const juce::String& /*error*/) {
+                        if (safe == nullptr || safe->videoId != id) return;
+                        if (success && file.existsAsFile())
+                            safe->updateState(1.0f, LanguageManager::trUtf8("Listo", "Ready"), false);
+                        else
+                            safe->updateState(0.0f, LanguageManager::trUtf8("Error", "Error"), false);
+                    }
+                );
+            };
+            addAndMakeVisible(btn);
+        }
+
+        void setTrack(const YouTubeSearchResult& item)
+        {
+            videoId = item.id;
+            trackTitle = item.title;
+            trackArtist = item.artist;
+            bool isCached = YouTubeAudioDownloader::getInstance().getCachedAudioFile(videoId).existsAsFile();
+            bool isDown = YouTubeAudioDownloader::getInstance().isDownloading(videoId);
+
+            if (isCached)
+                updateState(1.0f, LanguageManager::trUtf8("Listo", "Ready"), false);
+            else if (isDown)
+                updateState(0.5f, LanguageManager::trUtf8("Descargando...", "Downloading..."), true);
+            else
+                updateState(0.0f, LanguageManager::trUtf8("Descargar", "Download"), false);
+        }
+
+        void updateState(float progress, const juce::String& text, bool downloading)
+        {
+            juce::ignoreUnused(progress);
+            bool isCached = YouTubeAudioDownloader::getInstance().getCachedAudioFile(videoId).existsAsFile();
+
+            if (isCached)
+            {
+                btn.setIcon(LucideIcons::IconType::Check, 11.0f);
+                btn.setText(LanguageManager::trUtf8("Listo", "Ready"));
+                btn.setCustomColours(juce::Colour::fromRGB(16, 185, 129).withAlpha(0.2f),
+                                     juce::Colour::fromRGB(52, 211, 153),
+                                     juce::Colour::fromRGB(52, 211, 153),
+                                     juce::Colour::fromRGB(16, 185, 129).withAlpha(0.35f));
+            }
+            else if (downloading)
+            {
+                btn.setIcon(LucideIcons::IconType::Download, 11.0f);
+                btn.setText(text);
+                btn.setCustomColours(juce::Colour::fromRGB(245, 158, 11).withAlpha(0.2f),
+                                     juce::Colour::fromRGB(251, 191, 36),
+                                     juce::Colour::fromRGB(251, 191, 36),
+                                     juce::Colour::fromRGB(245, 158, 11).withAlpha(0.35f));
+            }
+            else
+            {
+                btn.setIcon(LucideIcons::IconType::Download, 11.0f);
+                btn.setText(LanguageManager::trUtf8("Descargar", "Download"));
+                btn.setCustomColours(juce::Colour::fromRGB(20, 24, 34),
+                                     juce::Colour::fromRGB(0, 210, 255),
+                                     juce::Colour::fromRGB(0, 210, 255),
+                                     juce::Colour::fromRGB(38, 43, 58));
+            }
+        }
+
+        void resized() override
+        {
+            auto area = getLocalBounds();
+            int btnH = 26;
+            int y = (area.getHeight() - btnH) / 2;
+            btn.setBounds(area.reduced(4, y));
+        }
+
+    private:
+        DjButton btn;
+        juce::String videoId;
+        juce::String trackTitle;
+        juce::String trackArtist;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(YtDownloadButtonComponent)
+    };
 }
 
 YouTubeLibraryView::YouTubeLibraryView()
 {
     // 1. Header Title
-    headerTitle.setText("YouTube DJ Video Streaming", juce::dontSendNotification);
+    headerTitle.setText("YouTube DJ Streaming", juce::dontSendNotification);
     headerTitle.setFont(juce::FontOptions(13.0f, juce::Font::bold));
     headerTitle.setColour(juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible(headerTitle);
+
+    // 1b. Playback Mode Toggle: Audio (Native) vs Video (Web)
+    audioModeBtn.setIcon(LucideIcons::IconType::Music, 11.0f);
+    audioModeBtn.setFontSize(11.0f);
+    audioModeBtn.setCornerRadius(4.0f);
+    audioModeBtn.onClick = [this]() {
+        YouTubeService::setAudioPlaybackMode(true);
+        updateModeButtons();
+    };
+    addAndMakeVisible(audioModeBtn);
+
+    videoModeBtn.setIcon(LucideIcons::IconType::Video, 11.0f);
+    videoModeBtn.setFontSize(11.0f);
+    videoModeBtn.setCornerRadius(4.0f);
+    videoModeBtn.onClick = [this]() {
+        YouTubeService::setAudioPlaybackMode(false);
+        updateModeButtons();
+    };
+    addAndMakeVisible(videoModeBtn);
+    updateModeButtons();
 
     // 2. Search Box
     searchBox.setTextToShowWhenEmpty("Buscar canciones, mixes o pegar enlace de YouTube...", juce::Colour::fromRGB(110, 118, 135));
@@ -101,10 +224,11 @@ YouTubeLibraryView::YouTubeLibraryView()
     table.setColour(juce::TableListBox::backgroundColourId, juce::Colour::fromRGB(12, 13, 18));
     table.getHeader().addColumn("#", 1, 36, 28, 45, juce::TableHeaderComponent::notSortable);
     table.getHeader().addColumn("VISTA PREVIA", 2, 96, 85, 110, juce::TableHeaderComponent::notSortable);
-    table.getHeader().addColumn(juce::String::fromUTF8("TÍTULO DEL VIDEO"), 3, 360, 180, 600);
-    table.getHeader().addColumn("CANAL / ARTISTA", 4, 180, 100, 300);
-    table.getHeader().addColumn(juce::String::fromUTF8("DURACIÓN"), 5, 80, 60, 100);
-    table.getHeader().addColumn("CARGAR", 6, 84, 75, 95, juce::TableHeaderComponent::notSortable);
+    table.getHeader().addColumn(juce::String::fromUTF8("TÍTULO DEL VIDEO"), 3, 340, 180, 600);
+    table.getHeader().addColumn("CANAL / ARTISTA", 4, 170, 100, 300);
+    table.getHeader().addColumn(juce::String::fromUTF8("DURACIÓN"), 5, 75, 55, 95);
+    table.getHeader().addColumn("CARGAR", 6, 80, 70, 95, juce::TableHeaderComponent::notSortable);
+    table.getHeader().addColumn(juce::String::fromUTF8("DESCARGAR"), 7, 95, 80, 115, juce::TableHeaderComponent::notSortable);
     table.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour::fromRGB(16, 18, 24));
     table.getHeader().setColour(juce::TableHeaderComponent::textColourId, juce::Colour::fromRGB(142, 149, 165));
     table.setRowHeight(56);
@@ -125,6 +249,33 @@ void YouTubeLibraryView::languageChanged()
     refreshLanguage();
 }
 
+void YouTubeLibraryView::updateModeButtons()
+{
+    bool audioMode = YouTubeService::isAudioPlaybackMode();
+    if (audioMode)
+    {
+        audioModeBtn.setCustomColours(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.25f),
+                                      juce::Colour::fromRGB(0, 229, 255),
+                                      juce::Colour::fromRGB(0, 229, 255),
+                                      juce::Colour::fromRGB(0, 180, 216).withAlpha(0.45f));
+        videoModeBtn.setCustomColours(juce::Colour::fromRGB(20, 23, 30),
+                                      juce::Colour::fromRGB(142, 149, 165),
+                                      juce::Colour::fromRGB(142, 149, 165),
+                                      juce::Colour::fromRGB(38, 43, 56));
+    }
+    else
+    {
+        audioModeBtn.setCustomColours(juce::Colour::fromRGB(20, 23, 30),
+                                      juce::Colour::fromRGB(142, 149, 165),
+                                      juce::Colour::fromRGB(142, 149, 165),
+                                      juce::Colour::fromRGB(38, 43, 56));
+        videoModeBtn.setCustomColours(juce::Colour::fromRGB(239, 68, 68).withAlpha(0.22f),
+                                      juce::Colour::fromRGB(248, 113, 113),
+                                      juce::Colour::fromRGB(248, 113, 113),
+                                      juce::Colour::fromRGB(239, 68, 68).withAlpha(0.45f));
+    }
+}
+
 void YouTubeLibraryView::refreshLanguage()
 {
     searchBtn.setText(LanguageManager::trUtf8("Buscar", "Search"));
@@ -133,13 +284,18 @@ void YouTubeLibraryView::refreshLanguage()
                                                              "Search songs, mixes or paste YouTube link..."),
                                      juce::Colour::fromRGB(110, 118, 135));
 
+    audioModeBtn.setText(LanguageManager::trUtf8("Audio", "Audio"));
+    videoModeBtn.setText(LanguageManager::trUtf8("Video", "Video"));
+
     table.getHeader().setColumnName(2, LanguageManager::trUtf8("VISTA PREVIA", "PREVIEW"));
     table.getHeader().setColumnName(3, LanguageManager::trUtf8("TÍTULO DEL VIDEO", "VIDEO TITLE"));
     table.getHeader().setColumnName(4, LanguageManager::trUtf8("CANAL / ARTISTA", "CHANNEL / ARTIST"));
     table.getHeader().setColumnName(5, LanguageManager::trUtf8("DURACIÓN", "DURATION"));
     table.getHeader().setColumnName(6, LanguageManager::trUtf8("CARGAR", "LOAD"));
+    table.getHeader().setColumnName(7, LanguageManager::trUtf8("DESCARGAR", "DOWNLOAD"));
 
     updateApiStatus();
+    updateModeButtons();
     table.repaint();
     repaint();
 }
@@ -365,6 +521,18 @@ juce::Component* YouTubeLibraryView::refreshComponentForCell(int rowNumber, int 
         });
         return comp;
     }
+    else if (columnId == 7) // DESCARGAR
+    {
+        auto* comp = dynamic_cast<YtDownloadButtonComponent*>(existingComponentToUpdate);
+        if (comp == nullptr)
+            comp = new YtDownloadButtonComponent();
+
+        if (rowNumber >= 0 && rowNumber < (int)searchResults.size())
+        {
+            comp->setTrack(searchResults[static_cast<size_t>(rowNumber)]);
+        }
+        return comp;
+    }
     delete existingComponentToUpdate;
     return nullptr;
 }
@@ -385,7 +553,9 @@ juce::var YouTubeLibraryView::getDragSourceDescription(const juce::SparseSet<int
     int firstRow = currentlySelectedRows[0];
     if (firstRow >= 0 && firstRow < (int)searchResults.size())
     {
-        return juce::var("yt:" + searchResults[static_cast<size_t>(firstRow)].id);
+        const auto& it = searchResults[static_cast<size_t>(firstRow)];
+        return juce::var("yt:" + it.id + "\t" + it.title + "\t" + it.artist + "\t"
+                         + it.thumbnailUrl + "\t" + juce::String(it.durationSeconds) + "\t" + it.durationText);
     }
     return {};
 }
@@ -405,10 +575,15 @@ void YouTubeLibraryView::resized()
 {
     auto area = getLocalBounds().reduced(10, 8);
 
-    // Row 1: Header + API status badge (28px)
+    // Row 1: Header + Mode Switch + API status badge (28px)
     auto topRow = area.removeFromTop(28);
     topRow.removeFromLeft(26); // space for YouTube icon
-    headerTitle.setBounds(topRow.removeFromLeft(230));
+    headerTitle.setBounds(topRow.removeFromLeft(180));
+    topRow.removeFromLeft(8);
+    audioModeBtn.setBounds(topRow.removeFromLeft(74).reduced(0, 2));
+    topRow.removeFromLeft(4);
+    videoModeBtn.setBounds(topRow.removeFromLeft(74).reduced(0, 2));
+    topRow.removeFromLeft(10);
     apiStatusBadge.setBounds(topRow);
 
     area.removeFromTop(6);

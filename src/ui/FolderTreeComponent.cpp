@@ -78,10 +78,18 @@ void FolderTreeComponent::TreeViewInternal::paint(juce::Graphics& g)
                 indent += 4;
         }
 
-        // 2. Folder Icon
+        // 2. Folder / Download Icon
         auto folderRect = juce::Rectangle<float>((float)indent, (float)(y + 7), 14.0f, 14.0f);
         auto folderCol = isSelected ? juce::Colours::white : juce::Colour::fromRGB(148, 163, 184);
-        LucideIcons::draw(g, LucideIcons::IconType::Folder, folderRect, folderCol, 1.5f);
+        if (row.isSystem && row.name == "Descargas")
+        {
+            auto dlCol = isSelected ? juce::Colours::white : juce::Colour::fromRGB(52, 211, 153);
+            LucideIcons::draw(g, LucideIcons::IconType::Download, folderRect, dlCol, 1.5f);
+        }
+        else
+        {
+            LucideIcons::draw(g, LucideIcons::IconType::Folder, folderRect, folderCol, 1.5f);
+        }
         indent += 19;
 
         // 3. Count badge
@@ -104,9 +112,14 @@ void FolderTreeComponent::TreeViewInternal::paint(juce::Graphics& g)
             auto textRect = juce::Rectangle<int>(indent, y, textWidth, getRowHeight());
             g.setColour(isSelected ? juce::Colours::white : juce::Colour::fromRGB(203, 213, 225));
             g.setFont(juce::FontOptions(11.5f, isSelected ? juce::Font::bold : juce::Font::plain));
-            juce::String displayName = (row.isSystem && row.name == "Todas las Pistas")
-                ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
-                : row.name;
+            juce::String displayName = row.name;
+            if (row.isSystem)
+            {
+                if (row.name == "Todas las Pistas")
+                    displayName = LanguageManager::trUtf8("Todas las Pistas", "All Tracks");
+                else if (row.name == "Descargas")
+                    displayName = LanguageManager::trUtf8("Descargas", "Downloads");
+            }
             g.drawText(displayName, textRect, juce::Justification::centredLeft, true);
         }
     }
@@ -352,12 +365,29 @@ void FolderTreeComponent::updateTree(const std::vector<TrackItem>& tracks)
     allPistas.isSystem = true;
     rootNodes.push_back(allPistas);
 
+    // 1b. Root Node: Descargas
+    int downloadsCount = 0;
+    for (const auto& t : tracks)
+    {
+        if (t.folder == "Descargas" || t.folder.startsWith("Descargas / "))
+            downloadsCount++;
+    }
+
+    FolderNode descargasNode;
+    descargasNode.name = "Descargas";
+    descargasNode.fullPath = "Descargas";
+    descargasNode.depth = 0;
+    descargasNode.directCount = downloadsCount;
+    descargasNode.totalCount = downloadsCount;
+    descargasNode.isSystem = true;
+    rootNodes.push_back(descargasNode);
+
     // 2. Hierarchical User Folders
     std::map<juce::String, std::shared_ptr<TempNode>> rootChildrenMap;
 
     for (const auto& t : tracks)
     {
-        if (t.isDemo || t.folder == "Todas las Pistas")
+        if (t.isDemo || t.folder == "Todas las Pistas" || t.folder == "Descargas" || t.folder.startsWith("Descargas / "))
             continue;
 
         juce::String rawFolder = t.folder.trim();

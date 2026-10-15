@@ -3,6 +3,8 @@
 #include "YouTubeLibraryView.h"
 #include "UsbLibraryView.h"
 #include "SoundCloudLibraryView.h"
+#include "../services/YouTubeService.h"
+#include "../services/YouTubeAudioDownloader.h"
 #include "../audio/SampleTrackGenerator.h"
 #include "../audio/BeatDetector.h"
 #include "CoverArtGenerator.h"
@@ -57,6 +59,488 @@ namespace
         std::function<void(int)> onDeckLoad;
     };
 }
+
+class LibraryComponent::AutomixQueueView : public juce::Component,
+                                           public juce::DragAndDropTarget
+{
+public:
+    class DeleteButton : public juce::Component
+    {
+    public:
+        std::function<void()> onClick;
+
+        DeleteButton()
+        {
+            setMouseCursor(juce::MouseCursor::PointingHandCursor);
+        }
+
+        void mouseEnter(const juce::MouseEvent&) override { isHover = true; repaint(); }
+        void mouseExit(const juce::MouseEvent&) override  { isHover = false; repaint(); }
+        void mouseUp(const juce::MouseEvent&) override    { if (onClick) onClick(); }
+
+        void paint(juce::Graphics& g) override
+        {
+            auto b = getLocalBounds().toFloat().reduced(2.0f);
+            if (isHover)
+            {
+                g.setColour(juce::Colour::fromRGB(244, 63, 94).withAlpha(0.25f));
+                g.fillEllipse(b);
+            }
+            g.setColour(isHover ? juce::Colour::fromRGB(244, 63, 94) : juce::Colour::fromRGB(110, 118, 135));
+            auto centre = b.getCentre();
+            float r = 3.2f;
+            g.drawLine(centre.x - r, centre.y - r, centre.x + r, centre.y + r, 1.4f);
+            g.drawLine(centre.x - r, centre.y + r, centre.x + r, centre.y - r, 1.4f);
+        }
+
+    private:
+        bool isHover { false };
+    };
+
+    class RowItem : public juce::Component
+    {
+    public:
+        RowItem(LibraryComponent& parentLibrary, int index, const TrackItem& item, bool isPlaying, bool isNext)
+            : owner(parentLibrary), rowIndex(index), track(item), playing(isPlaying), next(isNext)
+        {
+            deleteBtn.onClick = [this]() {
+                owner.deleteTrackFromAutomixQueue(rowIndex);
+            };
+            addAndMakeVisible(deleteBtn);
+        }
+
+        void mouseEnter(const juce::MouseEvent&) override { isHover = true; repaint(); }
+        void mouseExit(const juce::MouseEvent&) override  { isHover = false; repaint(); }
+
+        void mouseDown(const juce::MouseEvent& e) override
+        {
+            mouseDownPos = e.position;
+            hasStartedDrag = false;
+        }
+
+        void mouseDrag(const juce::MouseEvent& e) override
+        {
+            if (!hasStartedDrag && e.getDistanceFromDragStart() > 4)
+            {
+                hasStartedDrag = true;
+                if (auto* ddc = juce::DragAndDropContainer::findParentDragContainerFor(this))
+                {
+                    ddc->startDragging("automix_reorder:" + juce::String(rowIndex), this);
+                }
+            }
+        }
+
+        void mouseUp(const juce::MouseEvent&) override
+        {
+            hasStartedDrag = false;
+        }
+
+        void paint(juce::Graphics& g) override
+        {
+            auto itemRect = getLocalBounds().reduced(2, 1);
+
+            // Alternating row background
+            juce::Colour bg = (rowIndex % 2 == 0) ? juce::Colour::fromRGB(18, 20, 28) : juce::Colour::fromRGB(14, 16, 22);
+            if (isHover)
+                bg = bg.brighter(0.08f);
+            g.setColour(bg);
+            g.fillRoundedRectangle(itemRect.toFloat(), 4.0f);
+
+            // Highlight playing or next track
+            if (playing)
+            {
+                g.setColour(juce::Colour::fromRGB(96, 165, 250).withAlpha(0.18f));
+                g.fillRoundedRectangle(itemRect.toFloat(), 4.0f);
+                g.setColour(juce::Colour::fromRGB(96, 165, 250).withAlpha(0.6f));
+                g.drawRoundedRectangle(itemRect.toFloat().reduced(0.5f), 4.0f, 1.2f);
+            }
+            else if (next)
+            {
+                g.setColour(juce::Colour::fromRGB(0, 229, 255).withAlpha(0.08f));
+                g.fillRoundedRectangle(itemRect.toFloat(), 4.0f);
+                g.setColour(juce::Colour::fromRGB(0, 229, 255).withAlpha(0.35f));
+                g.drawRoundedRectangle(itemRect.toFloat().reduced(0.5f), 4.0f, 1.0f);
+            }
+
+            // Track number
+            g.setColour(playing ? juce::Colour::fromRGB(96, 165, 250) : juce::Colour::fromRGB(100, 108, 125));
+            g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
+            auto numArea = itemRect;
+            g.drawText(juce::String(rowIndex + 1), numArea.removeFromLeft(20).reduced(2, 0), juce::Justification::centred, false);
+
+            // Delete button on the right (20px reserved)
+            numArea.removeFromRight(20);
+
+            // BPM badge or status tag
+            auto badgeArea = numArea.removeFromRight(36).reduced(1, 6);
+            if (playing)
+            {
+                g.setColour(juce::Colour::fromRGB(96, 165, 250).withAlpha(0.2f));
+                g.fillRoundedRectangle(badgeArea.toFloat(), 3.0f);
+                g.setColour(juce::Colour::fromRGB(147, 197, 253));
+                g.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+                g.drawText("ON AIR", badgeArea, juce::Justification::centred, false);
+            }
+            else if (next)
+            {
+                g.setColour(juce::Colour::fromRGB(0, 229, 255).withAlpha(0.12f));
+                g.fillRoundedRectangle(badgeArea.toFloat(), 3.0f);
+                g.setColour(juce::Colour::fromRGB(0, 229, 255));
+                g.setFont(juce::FontOptions(8.0f, juce::Font::bold));
+                g.drawText("NEXT", badgeArea, juce::Justification::centred, false);
+            }
+            else
+            {
+                g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.1f));
+                g.fillRoundedRectangle(badgeArea.toFloat(), 3.0f);
+                g.setColour(juce::Colour::fromRGB(0, 229, 255));
+                g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+                g.drawText(juce::String(track.bpm, 0), badgeArea, juce::Justification::centred, false);
+            }
+
+            // Title + Artist
+            auto textArea = numArea.reduced(4, 1);
+            g.setColour(playing ? juce::Colour::fromRGB(224, 242, 254) : juce::Colours::white);
+            g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+            g.drawText(track.title, textArea.removeFromTop(14), juce::Justification::centredLeft, true);
+
+            g.setColour(juce::Colour::fromRGB(142, 149, 165));
+            g.setFont(juce::FontOptions(9.0f));
+            g.drawText(track.artist, textArea, juce::Justification::centredLeft, true);
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            deleteBtn.setBounds(r.removeFromRight(20).reduced(2, 8));
+        }
+
+    private:
+        LibraryComponent& owner;
+        int rowIndex;
+        TrackItem track;
+        bool playing { false };
+        bool next { false };
+        bool isHover { false };
+        bool hasStartedDrag { false };
+        juce::Point<float> mouseDownPos;
+        DeleteButton deleteBtn;
+    };
+
+    class ListContentComponent : public juce::Component
+    {
+    public:
+        ListContentComponent(AutomixQueueView& parent) : view(parent) {}
+
+        void updateRows(LibraryComponent& libOwner)
+        {
+            rows.clear();
+            int idx = 0;
+            for (const auto& item : libOwner.automixQueue)
+            {
+                bool isPlaying = (libOwner.automixRunning && idx == libOwner.automixPlayingIndex);
+                bool isNext = (libOwner.automixRunning && (
+                    (libOwner.automixPlayingIndex == -1 && idx == 0) ||
+                    (libOwner.automixPlayingIndex >= 0 && idx == libOwner.automixPlayingIndex + 1)
+                ));
+                auto r = std::make_unique<RowItem>(libOwner, idx, item, isPlaying, isNext);
+                addAndMakeVisible(*r);
+                rows.push_back(std::move(r));
+                ++idx;
+            }
+            resized();
+            repaint();
+        }
+
+        int calculateTotalHeight() const
+        {
+            return (int)rows.size() * 34;
+        }
+
+        void setInsertLine(int index)
+        {
+            if (insertLineIndex != index)
+            {
+                insertLineIndex = index;
+                repaint();
+            }
+        }
+
+        void paintOverChildren(juce::Graphics& g) override
+        {
+            if (insertLineIndex >= 0 && insertLineIndex <= (int)rows.size())
+            {
+                float y = (float)(insertLineIndex * 34);
+                g.setColour(juce::Colour::fromRGB(0, 229, 255));
+                g.drawLine(4.0f, y, (float)getWidth() - 4.0f, y, 2.0f);
+                g.fillEllipse(2.0f, y - 3.0f, 6.0f, 6.0f);
+            }
+        }
+
+        void resized() override
+        {
+            int y = 0;
+            int w = getWidth();
+            for (auto& row : rows)
+            {
+                row->setBounds(0, y, w, 34);
+                y += 34;
+            }
+        }
+
+    private:
+        [[maybe_unused]] AutomixQueueView& view;
+        std::vector<std::unique_ptr<RowItem>> rows;
+        int insertLineIndex { -1 };
+    };
+
+    AutomixQueueView(LibraryComponent& parent)
+        : owner(parent), contentComp(*this)
+    {
+        viewport.setViewedComponent(&contentComp, false);
+        viewport.setScrollBarsShown(true, false);
+        viewport.setScrollBarThickness(6);
+        addAndMakeVisible(viewport);
+    }
+
+    void updateContent()
+    {
+        bool hasItems = !owner.automixQueue.empty();
+        viewport.setVisible(hasItems);
+        if (hasItems)
+        {
+            contentComp.updateRows(owner);
+            int totalH = contentComp.calculateTotalHeight();
+            contentComp.setSize(std::max(10, viewport.getWidth() - 6), totalH);
+        }
+        repaint();
+    }
+
+    void resized() override
+    {
+        viewport.setBounds(getLocalBounds().reduced(2));
+        if (!owner.automixQueue.empty())
+        {
+            int totalH = contentComp.calculateTotalHeight();
+            contentComp.setSize(std::max(10, viewport.getWidth() - 6), totalH);
+        }
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        bool isHover = owner.automixDropHover || externalDropHover;
+        g.setColour(isHover ? juce::Colour::fromRGB(37, 99, 235).withAlpha(0.12f) : juce::Colour::fromRGB(16, 18, 25));
+        g.fillRoundedRectangle(bounds, 8.0f);
+
+        g.setColour(isHover ? juce::Colour::fromRGB(96, 165, 250).withAlpha(0.6f) : juce::Colour::fromRGB(36, 42, 56));
+        g.drawRoundedRectangle(bounds, 8.0f, isHover ? 2.0f : 1.0f);
+
+        if (owner.automixQueue.empty())
+        {
+            // Empty state placeholder
+            float iconCentreX = bounds.getCentreX();
+            float totalBlockHeight = 94.0f;
+            float contentTop = juce::jmax(bounds.getY() + 14.0f,
+                                          bounds.getY() + (bounds.getHeight() - totalBlockHeight) * 0.45f);
+            float iconCentreY = contentTop + 16.0f;
+
+            g.setColour(juce::Colour::fromRGB(24, 28, 38));
+            g.fillEllipse(iconCentreX - 16.0f, iconCentreY - 16.0f, 32.0f, 32.0f);
+            LucideIcons::draw(g, LucideIcons::IconType::Music,
+                              juce::Rectangle<float>(iconCentreX - 8.0f, iconCentreY - 8.0f, 16.0f, 16.0f),
+                              juce::Colour::fromRGB(142, 149, 165), 1.6f);
+
+            g.setColour(juce::Colour::fromRGB(203, 213, 225));
+            g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+            g.drawText(LanguageManager::trUtf8("Arrastra canciones aquí", "Drop tracks here"),
+                       (int)bounds.getX(), (int)(iconCentreY + 22.0f), (int)bounds.getWidth(), 18,
+                       juce::Justification::centred, false);
+
+            g.setColour(juce::Colour::fromRGB(100, 108, 125));
+            g.setFont(juce::FontOptions(9.5f));
+            g.drawText(LanguageManager::trUtf8("Usa Shift o Cmd+A para seleccionar\ny arrastrar varias pistas.",
+                                               "Use Shift or Cmd+A to select\nand drag multiple tracks."),
+                       (int)bounds.getX() + 8, (int)(iconCentreY + 42.0f), (int)bounds.getWidth() - 16, 30,
+                       juce::Justification::centred, true);
+        }
+    }
+
+    bool isInterestedInDragSource(const SourceDetails& details) override
+    {
+        return details.description.toString().startsWith("automix_reorder:") ||
+               details.description.toString().isNotEmpty();
+    }
+
+    void itemDragEnter(const SourceDetails& details) override
+    {
+        itemDragMove(details);
+    }
+
+    void itemDragMove(const SourceDetails& details) override
+    {
+        if (details.description.toString().startsWith("automix_reorder:"))
+        {
+            auto posInContent = contentComp.getLocalPoint(this, details.localPosition);
+            int idx = juce::jlimit(0, (int)owner.automixQueue.size(), (int)((posInContent.y + 17) / 34));
+            contentComp.setInsertLine(idx);
+            externalDropHover = false;
+        }
+        else
+        {
+            contentComp.setInsertLine(-1);
+            if (!externalDropHover)
+            {
+                externalDropHover = true;
+                repaint();
+            }
+        }
+    }
+
+    void itemDragExit(const SourceDetails&) override
+    {
+        contentComp.setInsertLine(-1);
+        if (externalDropHover)
+        {
+            externalDropHover = false;
+            repaint();
+        }
+    }
+
+    void itemDropped(const SourceDetails& details) override
+    {
+        contentComp.setInsertLine(-1);
+        externalDropHover = false;
+        repaint();
+
+        if (details.description.toString().startsWith("automix_reorder:"))
+        {
+            int fromIdx = details.description.toString().substring(16).getIntValue();
+            auto posInContent = contentComp.getLocalPoint(this, details.localPosition);
+            int toIdx = juce::jlimit(0, (int)owner.automixQueue.size() - 1, (int)((posInContent.y + 17) / 34));
+            owner.reorderAutomixQueue(fromIdx, toIdx);
+        }
+        else
+        {
+            owner.handleAutomixDropTracks(details.description.toString());
+        }
+    }
+
+private:
+    LibraryComponent& owner;
+    juce::Viewport viewport;
+    ListContentComponent contentComp;
+    bool externalDropHover { false };
+};
+
+class LibraryComponent::DownloadsEmptyOverlay : public juce::Component
+{
+public:
+    DownloadsEmptyOverlay()
+    {
+        titleLabel.setFont(juce::FontOptions(13.5f, juce::Font::bold));
+        titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+        titleLabel.setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(titleLabel);
+
+        descLabel.setFont(juce::FontOptions(11.5f, juce::Font::plain));
+        descLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
+        descLabel.setJustificationType(juce::Justification::centred);
+        addAndMakeVisible(descLabel);
+
+        actionBtn.setFontSize(11.0f);
+        actionBtn.setCornerRadius(6.0f);
+        addAndMakeVisible(actionBtn);
+    }
+
+    void updateState(bool saveEnabled)
+    {
+        isSaveEnabled = saveEnabled;
+        if (!isSaveEnabled)
+        {
+            titleLabel.setText(LanguageManager::trUtf8("Carpeta de Descargas vacía", "Downloads folder is empty"), juce::dontSendNotification);
+            descLabel.setText(LanguageManager::trUtf8("Habilita el guardado de las descargas de audio en la configuración General para ver tus canciones.",
+                                                      "Enable saving audio downloads in General settings to see your tracks."), juce::dontSendNotification);
+            actionBtn.setIcon(LucideIcons::IconType::Settings, 13.0f);
+            actionBtn.setText(LanguageManager::trUtf8("Abrir Configuración General", "Open General Settings"));
+            actionBtn.setCustomColours(juce::Colour::fromRGB(22, 26, 35),
+                                       juce::Colour::fromRGB(0, 229, 255),
+                                       juce::Colour::fromRGB(0, 229, 255),
+                                       juce::Colour::fromRGB(38, 43, 56));
+            actionBtn.onClick = [this]() {
+                if (onOpenSettings) onOpenSettings();
+            };
+        }
+        else
+        {
+            titleLabel.setText(LanguageManager::trUtf8("Aún no tienes canciones descargadas", "No downloaded tracks yet"), juce::dontSendNotification);
+            descLabel.setText(LanguageManager::trUtf8("Busca temas en la pestaña YouTube y pulsa Descargar para guardarlos en esta carpeta.",
+                                                      "Search for tracks on the YouTube tab and click Download to save them to this folder."), juce::dontSendNotification);
+            actionBtn.setIcon(LucideIcons::IconType::YouTube, 13.0f);
+            actionBtn.setText(LanguageManager::trUtf8("Ir a YouTube", "Go to YouTube"));
+            actionBtn.setCustomColours(juce::Colour::fromRGB(26, 20, 24),
+                                       juce::Colour::fromRGB(239, 68, 68),
+                                       juce::Colour::fromRGB(239, 68, 68),
+                                       juce::Colour::fromRGB(48, 30, 36));
+            actionBtn.onClick = [this]() {
+                if (onGoToYouTube) onGoToYouTube();
+            };
+        }
+        resized();
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+        g.fillAll(juce::Colour::fromRGB(12, 13, 18));
+
+        // Circular badge for icon
+        float centreX = bounds.getCentreX();
+        float startY = juce::jmax(10.0f, bounds.getCentreY() - 80.0f);
+        auto badgeRect = juce::Rectangle<float>(centreX - 24.0f, startY, 48.0f, 48.0f);
+
+        if (!isSaveEnabled)
+        {
+            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.12f));
+            g.fillRoundedRectangle(badgeRect, 24.0f);
+            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.35f));
+            g.drawRoundedRectangle(badgeRect, 24.0f, 1.2f);
+            LucideIcons::draw(g, LucideIcons::IconType::Download, badgeRect.reduced(13.0f), juce::Colour::fromRGB(0, 229, 255), 1.8f);
+        }
+        else
+        {
+            g.setColour(juce::Colour::fromRGB(16, 185, 129).withAlpha(0.12f));
+            g.fillRoundedRectangle(badgeRect, 24.0f);
+            g.setColour(juce::Colour::fromRGB(16, 185, 129).withAlpha(0.35f));
+            g.drawRoundedRectangle(badgeRect, 24.0f, 1.2f);
+            LucideIcons::draw(g, LucideIcons::IconType::Download, badgeRect.reduced(13.0f), juce::Colour::fromRGB(52, 211, 153), 1.8f);
+        }
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds();
+        int centreX = bounds.getCentreX();
+        int startY = juce::jmax(10, bounds.getCentreY() - 80);
+
+        int y = startY + 56;
+        titleLabel.setBounds(centreX - 250, y, 500, 22);
+        y += 24;
+        descLabel.setBounds(centreX - 260, y, 520, 20);
+        y += 28;
+        actionBtn.setBounds(centreX - 110, y, 220, 30);
+    }
+
+    std::function<void()> onOpenSettings;
+    std::function<void()> onGoToYouTube;
+
+private:
+    juce::Label titleLabel;
+    juce::Label descLabel;
+    DjButton actionBtn;
+    bool isSaveEnabled { false };
+};
 
 LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     : formatManager(fm)
@@ -130,6 +614,7 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     folderTree.onSelectFolder = [this](const juce::String& folderPath) {
         currentSelectedFolder = folderPath;
         filterTracks(searchBox.getText());
+        updateDownloadsEmptyState();
     };
     folderTree.onAddFolder = [this]() {
         importFolder();
@@ -180,6 +665,17 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     table.setRowHeight(34);
     table.setMultipleSelectionEnabled(true);
     addAndMakeVisible(table);
+
+    // Overlay para estado vacío de Descargas
+    downloadsEmptyOverlay = std::make_unique<DownloadsEmptyOverlay>();
+    downloadsEmptyOverlay->onOpenSettings = [this]() {
+        if (onOpenSettings) onOpenSettings(0);
+    };
+    downloadsEmptyOverlay->onGoToYouTube = [this]() {
+        setLibraryMode(LibraryMode::YouTube);
+    };
+    downloadsEmptyOverlay->setVisible(false);
+    addChildComponent(*downloadsEmptyOverlay);
 
     // 4. Right Automix Panel
     automixHeader.setIcon(LucideIcons::IconType::Sparkles, 14.0f);
@@ -243,7 +739,21 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     queueTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(100, 108, 125));
     addAndMakeVisible(queueTitle);
 
+    automixQueueView = std::make_unique<AutomixQueueView>(*this);
+    addAndMakeVisible(*automixQueueView);
+
     setWantsKeyboardFocus(true);
+
+    // Escaneo inicial de la carpeta de Descargas persistentes
+    scanDownloadsFolder();
+
+    // Listener para registrar inmediatamente nuevas canciones descargadas de YouTube
+    YouTubeAudioDownloader::getInstance().onTrackSavedToDownloads = [this](const juce::File& file, const juce::String& /*id*/, const juce::String& /*title*/, const juce::String& /*artist*/) {
+        auto dlFolder = YouTubeService::getDownloadsFolder();
+        addTrack(file, "Descargas", dlFolder.getFullPathName(), false);
+        folderTree.updateTree(allTracks);
+        filterTracks(searchBox.getText());
+    };
 
     filteredTracks = allTracks;
     folderTree.updateTree(allTracks);
@@ -295,12 +805,15 @@ void LibraryComponent::refreshLanguage()
     railYtBtn.setTooltip(LanguageManager::trUtf8("YouTube DJ Streaming", "YouTube DJ Streaming"));
     railScBtn.setTooltip(LanguageManager::trUtf8("SoundCloud DJ Streaming", "SoundCloud DJ Streaming"));
 
-    juce::String folderDisplay = (currentSelectedFolder == "Todas las Pistas")
-        ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
-        : currentSelectedFolder;
+    juce::String folderDisplay = currentSelectedFolder;
+    if (currentSelectedFolder == "Todas las Pistas")
+        folderDisplay = LanguageManager::trUtf8("Todas las Pistas", "All Tracks");
+    else if (currentSelectedFolder == "Descargas")
+        folderDisplay = LanguageManager::trUtf8("Descargas", "Downloads");
     tableHeaderTitle.setText(folderDisplay + "  " + juce::String((int)filteredTracks.size()) + " " + LanguageManager::trUtf8("Canciones", "Tracks"), juce::dontSendNotification);
 
     table.repaint();
+    updateDownloadsEmptyState();
     repaint();
 }
 
@@ -372,6 +885,21 @@ void LibraryComponent::scanFolderRecursive(const juce::File& folder)
         }
 
         addTrack(f, folderTag, rootPath, false);
+    }
+}
+
+void LibraryComponent::scanDownloadsFolder()
+{
+    auto dlFolder = YouTubeService::getDownloadsFolder();
+    if (!dlFolder.exists())
+        dlFolder.createDirectory();
+
+    juce::Array<juce::File> files;
+    dlFolder.findChildFiles(files, juce::File::findFiles, false, "*.wav;*.mp3;*.flac;*.aiff;*.aif;*.m4a;*.ogg;*.aac");
+
+    for (const auto& f : files)
+    {
+        addTrack(f, "Descargas", dlFolder.getFullPathName(), false);
     }
 }
 
@@ -538,6 +1066,10 @@ void LibraryComponent::setLibraryMode(LibraryMode mode)
     smartAutomixBtn.setVisible(isLocal);
     clearQueueBtn.setVisible(isLocal && !automixQueue.empty());
     queueTitle.setVisible(isLocal);
+    if (automixQueueView != nullptr)
+        automixQueueView->setVisible(isLocal);
+
+    updateDownloadsEmptyState();
 
     if (usbView != nullptr)
     {
@@ -595,6 +1127,10 @@ void LibraryComponent::filterTracks(const juce::String& query)
         {
             matchesFolder = true;
         }
+        else if (currentSelectedFolder == "Descargas")
+        {
+            matchesFolder = (t.folder == "Descargas" || t.folder.startsWith("Descargas / "));
+        }
         else
         {
             // Explicit user preference: "Mostrar únicamente los temas que estén directamente en la raíz de esa carpeta"
@@ -619,17 +1155,44 @@ void LibraryComponent::filterTracks(const juce::String& query)
     }
 
     // Update table header title
-    juce::String folderDisplay = (currentSelectedFolder == "Todas las Pistas")
-        ? LanguageManager::trUtf8("Todas las Pistas", "All Tracks")
-        : currentSelectedFolder;
+    juce::String folderDisplay = currentSelectedFolder;
+    if (currentSelectedFolder == "Todas las Pistas")
+        folderDisplay = LanguageManager::trUtf8("Todas las Pistas", "All Tracks");
+    else if (currentSelectedFolder == "Descargas")
+        folderDisplay = LanguageManager::trUtf8("Descargas", "Downloads");
     tableHeaderTitle.setText(folderDisplay + "  " + juce::String((int)filteredTracks.size()) + " " + LanguageManager::trUtf8("Canciones", "Tracks"), juce::dontSendNotification);
 
     table.updateContent();
     table.repaint();
+    updateDownloadsEmptyState();
+}
+
+void LibraryComponent::updateDownloadsEmptyState()
+{
+    if (downloadsEmptyOverlay == nullptr)
+        return;
+
+    bool shouldShow = (currentMode == LibraryMode::Local &&
+                       currentSelectedFolder == "Descargas" &&
+                       filteredTracks.empty());
+
+    if (shouldShow)
+    {
+        downloadsEmptyOverlay->updateState(YouTubeService::isSaveDownloadsEnabled());
+        downloadsEmptyOverlay->setVisible(true);
+        downloadsEmptyOverlay->toFront(false);
+    }
+    else
+    {
+        downloadsEmptyOverlay->setVisible(false);
+    }
 }
 
 void LibraryComponent::unsyncFolder(const juce::String& folderPath)
 {
+    if (folderPath == "Descargas" || folderPath == "Todas las Pistas")
+        return;
+
     allTracks.erase(std::remove_if(allTracks.begin(), allTracks.end(), [&](const TrackItem& t) {
         return t.folder == folderPath ||
                t.folder.startsWith(folderPath + " / ") ||
@@ -845,108 +1408,6 @@ void LibraryComponent::paint(juce::Graphics& g)
 
     g.drawVerticalLine(258, 0.0f, bounds.getHeight()); // after "Mis Archivos" sidebar (42 + 216)
     g.drawVerticalLine(getWidth() - 250, 0.0f, bounds.getHeight()); // before Automix panel
-
-    // Automix Dropzone
-    auto dropArea = automixDropArea.isEmpty()
-        ? juce::Rectangle<float>((float)getWidth() - 242.0f, 126.0f, 234.0f, (float)getHeight() - 134.0f)
-        : automixDropArea;
-
-    g.setColour(automixDropHover ? juce::Colour::fromRGB(37, 99, 235).withAlpha(0.1f) : juce::Colour::fromRGB(16, 18, 25));
-    g.fillRoundedRectangle(dropArea, 8.0f);
-
-    g.setColour(automixDropHover ? juce::Colour::fromRGB(96, 165, 250).withAlpha(0.6f) : juce::Colour::fromRGB(36, 42, 56));
-    g.drawRoundedRectangle(dropArea, 8.0f, automixDropHover ? 2.0f : 1.0f);
-
-    if (automixQueue.empty())
-    {
-        // Empty state placeholder - vertically centered inside dropArea
-        float iconCentreX = dropArea.getCentreX();
-        float totalBlockHeight = 32.0f + 10.0f + 18.0f + 4.0f + 30.0f; // ~94px
-        float contentTop = juce::jmax(dropArea.getY() + 14.0f,
-                                      dropArea.getY() + (dropArea.getHeight() - totalBlockHeight) * 0.45f);
-        float iconCentreY = contentTop + 16.0f;
-
-        g.setColour(juce::Colour::fromRGB(24, 28, 38));
-        g.fillEllipse(iconCentreX - 16.0f, iconCentreY - 16.0f, 32.0f, 32.0f);
-        LucideIcons::draw(g, LucideIcons::IconType::Music,
-                          juce::Rectangle<float>(iconCentreX - 8.0f, iconCentreY - 8.0f, 16.0f, 16.0f),
-                          juce::Colour::fromRGB(142, 149, 165), 1.6f);
-
-        g.setColour(juce::Colour::fromRGB(203, 213, 225));
-        g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
-        g.drawText(LanguageManager::trUtf8("Arrastra canciones aquí", "Drop tracks here"),
-                   (int)dropArea.getX(), (int)(iconCentreY + 22.0f), (int)dropArea.getWidth(), 18,
-                   juce::Justification::centred, false);
-
-        g.setColour(juce::Colour::fromRGB(100, 108, 125));
-        g.setFont(juce::FontOptions(9.5f));
-        g.drawText(LanguageManager::trUtf8("Usa Shift o Cmd+A para seleccionar\ny arrastrar varias pistas.", "Use Shift or Cmd+A to select\nand drag multiple tracks."),
-                   (int)dropArea.getX() + 8, (int)(iconCentreY + 42.0f), (int)dropArea.getWidth() - 16, 30,
-                   juce::Justification::centred, true);
-    }
-    else
-    {
-        // Draw queued tracks
-        int itemHeight = 32;
-        int y = (int)dropArea.getY() + 4;
-        int maxVisible = ((int)dropArea.getHeight() - 8) / itemHeight;
-        int numToDraw = juce::jmin((int)automixQueue.size(), maxVisible);
-
-        for (int i = 0; i < numToDraw; ++i)
-        {
-            const auto& track = automixQueue[static_cast<size_t>(i)];
-            auto itemRect = juce::Rectangle<int>((int)dropArea.getX() + 4, y, (int)dropArea.getWidth() - 8, itemHeight);
-
-            // Alternating row background
-            g.setColour((i % 2 == 0) ? juce::Colour::fromRGB(18, 20, 28) : juce::Colour::fromRGB(14, 16, 22));
-            g.fillRoundedRectangle(itemRect.toFloat(), 4.0f);
-
-            // Highlight first item when automix is running (currently playing)
-            if (automixRunning && i == 0)
-            {
-                g.setColour(juce::Colour::fromRGB(96, 165, 250).withAlpha(0.15f));
-                g.fillRoundedRectangle(itemRect.toFloat(), 4.0f);
-                g.setColour(juce::Colour::fromRGB(96, 165, 250).withAlpha(0.5f));
-                g.drawRoundedRectangle(itemRect.toFloat().reduced(0.5f), 4.0f, 1.0f);
-            }
-
-            // Track number
-            g.setColour(juce::Colour::fromRGB(100, 108, 125));
-            g.setFont(juce::FontOptions(9.5f, juce::Font::bold));
-            auto numArea = itemRect;
-            g.drawText(juce::String(i + 1), numArea.removeFromLeft(20).reduced(2, 0), juce::Justification::centred, false);
-
-            // BPM badge on right
-            auto bpmArea = numArea.removeFromRight(38).reduced(2, 6);
-            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.1f));
-            g.fillRoundedRectangle(bpmArea.toFloat(), 3.0f);
-            g.setColour(juce::Colour::fromRGB(0, 229, 255));
-            g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-            g.drawText(juce::String(track.bpm, 0), bpmArea, juce::Justification::centred, false);
-
-            // Title + Artist
-            auto textArea = numArea.reduced(4, 2);
-            g.setColour(juce::Colours::white);
-            g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-            g.drawText(track.title, textArea.removeFromTop(14), juce::Justification::centredLeft, true);
-
-            g.setColour(juce::Colour::fromRGB(142, 149, 165));
-            g.setFont(juce::FontOptions(9.0f));
-            g.drawText(track.artist, textArea, juce::Justification::centredLeft, true);
-
-            y += itemHeight;
-        }
-
-        // Show overflow count if more items than visible
-        if ((int)automixQueue.size() > maxVisible)
-        {
-            g.setColour(juce::Colour::fromRGB(100, 108, 125));
-            g.setFont(juce::FontOptions(9.5f));
-            g.drawText("+" + juce::String((int)automixQueue.size() - maxVisible) + " " + LanguageManager::trUtf8("más...", "more..."),
-                       (int)dropArea.getX(), (int)(dropArea.getBottom() - 18.0f), (int)dropArea.getWidth(), 16,
-                       juce::Justification::centred, false);
-        }
-    }
 }
 
 void LibraryComponent::resized()
@@ -1017,6 +1478,8 @@ void LibraryComponent::resized()
     }
     automixArea.removeFromTop(6);
     automixDropArea = automixArea.toFloat();
+    if (automixQueueView != nullptr)
+        automixQueueView->setBounds(automixArea);
 
     // 4. Center Track Table Area (remaining width)
     auto centerArea = area.reduced(8, 6);
@@ -1029,6 +1492,15 @@ void LibraryComponent::resized()
 
     centerArea.removeFromTop(6);
     table.setBounds(centerArea);
+
+    if (downloadsEmptyOverlay != nullptr)
+    {
+        auto emptyArea = centerArea;
+        int headerH = table.getHeader().getHeight();
+        if (headerH > 0)
+            emptyArea.removeFromTop(headerH);
+        downloadsEmptyOverlay->setBounds(emptyArea);
+    }
 }
 
 bool LibraryComponent::keyPressed(const juce::KeyPress& key)
@@ -1088,98 +1560,107 @@ void LibraryComponent::itemDropped(const SourceDetails& dragSourceDetails)
     // Check if the drop happened over the Automix drop zone or panel
     if (automixDropArea.contains(dragSourceDetails.localPosition.toFloat()) || dragSourceDetails.localPosition.x >= getWidth() - 250)
     {
-        juce::StringArray paths;
-        paths.addTokens(dragSourceDetails.description.toString(), "\n", "");
+        handleAutomixDropTracks(dragSourceDetails.description.toString());
+    }
 
-        std::vector<TrackItem> tracksToAdd;
-        for (const auto& path : paths)
+    repaint();
+}
+
+void LibraryComponent::handleAutomixDropTracks(const juce::String& description)
+{
+    juce::StringArray paths;
+    paths.addTokens(description, "\n", "");
+
+    std::vector<TrackItem> tracksToAdd;
+    for (const auto& path : paths)
+    {
+        auto trimmed = path.trim();
+        if (trimmed.isEmpty()) continue;
+
+        bool found = false;
+        // 1. Search in allTracks
+        for (const auto& track : allTracks)
         {
-            auto trimmed = path.trim();
-            if (trimmed.isEmpty()) continue;
-
-            bool found = false;
-            // 1. Search in allTracks
-            for (const auto& track : allTracks)
+            if (track.file.getFullPathName() == trimmed || track.file == juce::File(trimmed))
+            {
+                // Excluir audios de menos de 60s (samples / jingles)
+                if (track.duration <= 0.0 || track.duration >= 60.0)
+                    tracksToAdd.push_back(track);
+                found = true;
+                break;
+            }
+        }
+        // 2. Search in filteredTracks
+        if (!found)
+        {
+            for (const auto& track : filteredTracks)
             {
                 if (track.file.getFullPathName() == trimmed || track.file == juce::File(trimmed))
                 {
-                    tracksToAdd.push_back(track);
+                    if (track.duration <= 0.0 || track.duration >= 60.0)
+                        tracksToAdd.push_back(track);
                     found = true;
                     break;
                 }
             }
-            // 2. Search in filteredTracks
-            if (!found)
+        }
+        // 3. Fallback: if it's a valid local file dropped
+        if (!found)
+        {
+            juce::File f(trimmed);
+            if (f.existsAsFile())
             {
-                for (const auto& track : filteredTracks)
+                TrackItem ti;
+                ti.id = juce::String(juce::Random::getSystemRandom().nextInt());
+                ti.file = f;
+                ti.title = f.getFileNameWithoutExtension().replaceCharacter('_', ' ');
+                ti.artist = "Artista Local";
+                ti.album = "Local Audio";
+                ti.bpm = 124.0;
+                ti.key = "8A";
+                ti.duration = 180.0;
+
+                std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
+                if (reader != nullptr)
                 {
-                    if (track.file.getFullPathName() == trimmed || track.file == juce::File(trimmed))
+                    ti.duration = (double)reader->lengthInSamples / reader->sampleRate;
+                    auto metaTitle = reader->metadataValues.getValue("title", "");
+                    auto metaArtist = reader->metadataValues.getValue("artist", "");
+                    auto metaAlbum = reader->metadataValues.getValue("album", "");
+                    if (metaTitle.isNotEmpty()) ti.title = metaTitle;
+                    if (metaArtist.isNotEmpty()) ti.artist = metaArtist;
+                    if (metaAlbum.isNotEmpty()) ti.album = metaAlbum;
+
+                    auto bpmStr = reader->metadataValues.getValue("bpm", "");
+                    if (bpmStr.isEmpty()) bpmStr = reader->metadataValues.getValue("TBPM", "");
+                    if (bpmStr.isEmpty()) bpmStr = reader->metadataValues.getValue("tempo", "");
+                    if (bpmStr.isNotEmpty())
                     {
-                        tracksToAdd.push_back(track);
-                        found = true;
-                        break;
+                        double val = bpmStr.getDoubleValue();
+                        if (val >= 40.0 && val <= 250.0)
+                            ti.bpm = val;
                     }
+                    else
+                    {
+                        auto beatRes = BeatDetector::analyze(reader.get());
+                        if (beatRes.bpm > 0.0)
+                            ti.bpm = beatRes.bpm;
+                    }
+
+                    auto keyStr = reader->metadataValues.getValue("initialkey", "");
+                    if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("TKEY", "");
+                    if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
+                    if (keyStr.isNotEmpty()) ti.key = keyStr;
                 }
-            }
-            // 3. Fallback: if it's a valid local file dropped
-            if (!found)
-            {
-                juce::File f(trimmed);
-                if (f.existsAsFile())
-                {
-                    TrackItem ti;
-                    ti.id = juce::String(juce::Random::getSystemRandom().nextInt());
-                    ti.file = f;
-                    ti.title = f.getFileNameWithoutExtension().replaceCharacter('_', ' ');
-                    ti.artist = "Artista Local";
-                    ti.album = "Local Audio";
-                    ti.bpm = 124.0;
-                    ti.key = "8A";
-                    ti.duration = 180.0;
 
-                    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
-                    if (reader != nullptr)
-                    {
-                        ti.duration = (double)reader->lengthInSamples / reader->sampleRate;
-                        auto metaTitle = reader->metadataValues.getValue("title", "");
-                        auto metaArtist = reader->metadataValues.getValue("artist", "");
-                        auto metaAlbum = reader->metadataValues.getValue("album", "");
-                        if (metaTitle.isNotEmpty()) ti.title = metaTitle;
-                        if (metaArtist.isNotEmpty()) ti.artist = metaArtist;
-                        if (metaAlbum.isNotEmpty()) ti.album = metaAlbum;
-
-                        auto bpmStr = reader->metadataValues.getValue("bpm", "");
-                        if (bpmStr.isEmpty()) bpmStr = reader->metadataValues.getValue("TBPM", "");
-                        if (bpmStr.isEmpty()) bpmStr = reader->metadataValues.getValue("tempo", "");
-                        if (bpmStr.isNotEmpty())
-                        {
-                            double val = bpmStr.getDoubleValue();
-                            if (val >= 40.0 && val <= 250.0)
-                                ti.bpm = val;
-                        }
-                        else
-                        {
-                            auto beatRes = BeatDetector::analyze(reader.get());
-                            if (beatRes.bpm > 0.0)
-                                ti.bpm = beatRes.bpm;
-                        }
-
-                        auto keyStr = reader->metadataValues.getValue("initialkey", "");
-                        if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("TKEY", "");
-                        if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
-                        if (keyStr.isNotEmpty()) ti.key = keyStr;
-                    }
-
+                if (ti.duration <= 0.0 || ti.duration >= 60.0)
                     tracksToAdd.push_back(ti);
-                }
             }
         }
-
-        if (!tracksToAdd.empty())
-            addToAutomixQueue(tracksToAdd);
     }
 
-    repaint();
+    if (!tracksToAdd.empty())
+        addToAutomixQueue(tracksToAdd);
 }
 
 void LibraryComponent::addToAutomixQueue(const std::vector<TrackItem>& tracks)
@@ -1199,11 +1680,17 @@ void LibraryComponent::addToAutomixQueue(const std::vector<TrackItem>& tracks)
 
     queueTitle.setText(LanguageManager::trUtf8("COLA · ", "QUEUE · ") + juce::String((int)automixQueue.size()) + LanguageManager::trUtf8(" pistas", " tracks"),
                        juce::dontSendNotification);
+
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+
     repaint();
 }
 
 void LibraryComponent::clearAutomixQueue()
-{    automixQueue.clear();
+{
+    automixQueue.clear();
+    automixPlayingIndex = -1;
     clearQueueBtn.setVisible(false);
 
     startAutomixBtn.setCustomColours(juce::Colour::fromRGB(22, 25, 34),
@@ -1213,6 +1700,10 @@ void LibraryComponent::clearAutomixQueue()
 
     queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
     queueTitle.setTooltip("");
+
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+
     repaint();
 }
 
@@ -1222,6 +1713,63 @@ void LibraryComponent::setAutomixQueue(const std::vector<TrackItem>& tracks)
     automixQueue.clear();
     clearQueueBtn.setVisible(false);
     addToAutomixQueue(tracks);
+}
+
+void LibraryComponent::setAutomixPlayingIndex(int index)
+{
+    automixPlayingIndex = index;
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+    repaint();
+}
+
+void LibraryComponent::deleteTrackFromAutomixQueue(int index)
+{
+    if (index < 0 || index >= (int)automixQueue.size())
+        return;
+
+    automixQueue.erase(automixQueue.begin() + index);
+
+    if (onAutomixQueueChanged)
+        onAutomixQueueChanged(automixQueue);
+
+    clearQueueBtn.setVisible(!automixQueue.empty());
+    if (automixQueue.empty())
+    {
+        queueTitle.setText(LanguageManager::trUtf8("COLA DE REPRODUCCIÓN", "PLAYBACK QUEUE"), juce::dontSendNotification);
+        setAutomixRunning(false);
+        if (onStopAutomix)
+            onStopAutomix();
+    }
+    else
+    {
+        queueTitle.setText(LanguageManager::trUtf8("COLA · ", "QUEUE · ") + juce::String((int)automixQueue.size()) + LanguageManager::trUtf8(" pistas", " tracks"),
+                           juce::dontSendNotification);
+    }
+
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+
+    repaint();
+}
+
+void LibraryComponent::reorderAutomixQueue(int fromIndex, int toIndex)
+{
+    if (fromIndex < 0 || fromIndex >= (int)automixQueue.size() ||
+        toIndex < 0 || toIndex >= (int)automixQueue.size() || fromIndex == toIndex)
+        return;
+
+    auto item = automixQueue[(size_t)fromIndex];
+    automixQueue.erase(automixQueue.begin() + fromIndex);
+    automixQueue.insert(automixQueue.begin() + toIndex, item);
+
+    if (onAutomixQueueChanged)
+        onAutomixQueueChanged(automixQueue);
+
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+
+    repaint();
 }
 
 void LibraryComponent::setQueueMessage(const juce::String& message)
@@ -1286,6 +1834,10 @@ void LibraryComponent::setAutomixRunning(bool running)
                                              juce::Colour::fromRGB(59, 130, 246).withAlpha(0.4f));
         }
     }
+
+    if (automixQueueView != nullptr)
+        automixQueueView->updateContent();
+
     repaint();
 }
 
