@@ -7,6 +7,7 @@
 #include "../midi/MidiManager.h"
 #include "../services/AIService.h"
 #include "../services/LanguageManager.h"
+#include "../services/UpdateService.h"
 #include "LucideIcons.h"
 #include "DjButton.h"
 
@@ -27,6 +28,7 @@ public:
 
     std::function<void()> onClose;
     std::function<void()> onDownloadsFolderChanged;
+    std::function<void(bool)> onUpdateAvailabilityChanged;
 
 private:
     void setupGeneralTab();
@@ -37,6 +39,8 @@ private:
     void setupAITab();
     void setupDonateTab();
     void setupDesignTab();
+    void setupVersionTab();
+    void checkUpdatesFromUI();
     void openColourPicker(int band); // 0 = graves, 1 = medios, 2 = agudos
     void refreshDesignSwatches();
     void refreshMidiDevices();
@@ -47,7 +51,7 @@ private:
 
     AudioEngine& audioEngine;
     MidiManager& midi;
-    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA, 7: Donar, 8: Diseño
+    int activeTab = 0; // 0: General, 1: Dispositivos, 2: Sonido, 3: MIDI, 4: Shortcuts, 5: Streaming, 6: IA, 7: Donar, 8: Diseño, 9: Versión
 
     // Tab buttons
     DjButton tabGeneralBtn;
@@ -59,6 +63,7 @@ private:
     DjButton tabAIBtn;
     DjButton tabDonateBtn;
     DjButton tabDesignBtn;
+    DjButton tabVersionBtn;
 
     // --- Tab 0: General Controls ---
     juce::Label languageSectionLabel;
@@ -186,6 +191,23 @@ private:
     DjButton presetSilverBtn;
     juce::Component::SafePointer<juce::ColourSelector> activeColourSelector;
     int activeColourBand { -1 };
+
+    // --- Tab 9: Versión & Actualizaciones ---
+    juce::Label versionSectionTitle;
+    juce::Label versionAppTitle;
+    juce::Label versionStatusLabel;
+    DjButton checkUpdatesBtn;
+
+    juce::Label versionChangeTitle;
+    juce::Label versionHelpIcon;
+    juce::ComboBox versionSelectCombo;
+    DjButton installVersionBtn;
+    juce::Label downloadStatusLabel;
+    double downloadProgressValue { -1.0 };
+    juce::ProgressBar downloadProgressBar { downloadProgressValue };
+    bool isDownloading { false };
+    bool isCheckingUpdates { false };
+    std::vector<ReleaseItem> availableReleases;
 
     // --- Footer Controls ---
     juce::TextButton undoButton { "Deshacer" };

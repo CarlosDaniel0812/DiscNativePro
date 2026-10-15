@@ -63,10 +63,7 @@ private:
 
     // Update notification (GitHub Releases, once per launch)
     UpdateInfo pendingUpdate;
-    bool updateDialogShown { false };
-    bool updateRechecking { false }; // anti-doble-chequeo en clics seguidos
     void scheduleUpdateCheck();
-    void showUpdateDialog(const UpdateInfo& info);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

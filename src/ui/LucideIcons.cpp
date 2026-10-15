@@ -507,6 +507,25 @@ juce::Path LucideIcons::getPath(IconType icon)
             p.closeSubPath();
             break;
         }
+
+        case IconType::Tag:
+        {
+            p.startNewSubPath(11.5f, 2.0f);
+            p.lineTo(4.0f, 2.0f);
+            p.cubicTo(2.9f, 2.0f, 2.0f, 2.9f, 2.0f, 4.0f);
+            p.lineTo(2.0f, 11.5f);
+            p.cubicTo(2.0f, 12.0f, 2.2f, 12.5f, 2.6f, 12.9f);
+            p.lineTo(11.8f, 22.1f);
+            p.cubicTo(12.6f, 22.9f, 13.9f, 22.9f, 14.7f, 22.1f);
+            p.lineTo(21.3f, 15.5f);
+            p.cubicTo(22.1f, 14.7f, 22.1f, 13.4f, 21.3f, 12.6f);
+            p.lineTo(12.9f, 2.6f);
+            p.cubicTo(12.5f, 2.2f, 12.0f, 2.0f, 11.5f, 2.0f);
+            p.closeSubPath();
+
+            p.addEllipse(6.0f, 6.0f, 2.0f, 2.0f);
+            break;
+        }
     }
 
     return p;

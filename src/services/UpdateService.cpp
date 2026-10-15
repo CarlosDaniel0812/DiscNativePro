@@ -5,6 +5,8 @@ namespace
 {
 constexpr const char* kLatestReleaseApi =
     "https://api.github.com/repos/axel-molina/DiscNativePro/releases/latest";
+constexpr const char* kReleasesApi =
+    "https://api.github.com/repos/axel-molina/DiscNativePro/releases?per_page=15";
 
 #if JUCE_MAC
 constexpr const char* kAssetName = "DiscNativePro-macOS-Universal.zip";
@@ -13,6 +15,62 @@ constexpr const char* kAssetName = "DiscNativePro-Windows-x64-Setup.exe";
 #else
 constexpr const char* kAssetName = "DiscNativePro-Linux-x64.tar.gz";
 #endif
+
+ReleaseItem parseReleaseItem(const juce::var& releaseObj)
+{
+    ReleaseItem item;
+    if (!releaseObj.isObject())
+        return item;
+
+    item.tagName = releaseObj["tag_name"].toString().trim();
+    item.version = item.tagName;
+    if (item.version.startsWithChar('v') || item.version.startsWithChar('V'))
+        item.version = item.version.substring(1);
+    item.name = releaseObj["name"].toString().trim();
+    if (item.name.isEmpty())
+        item.name = item.tagName;
+    item.releaseNotes = releaseObj["body"].toString();
+    item.pageUrl = releaseObj["html_url"].toString();
+    item.downloadUrl = item.pageUrl;
+
+    if (auto* assets = releaseObj["assets"].getArray())
+    {
+        for (auto& a : *assets)
+        {
+            auto name = a["name"].toString();
+            auto dl = a["browser_download_url"].toString();
+            if (name == kAssetName && dl.isNotEmpty())
+            {
+                item.downloadUrl = dl;
+                item.assetName = name;
+                break;
+            }
+        }
+
+        if (item.assetName.isEmpty())
+        {
+            for (auto& a : *assets)
+            {
+                auto name = a["name"].toString();
+                auto dl = a["browser_download_url"].toString();
+               #if JUCE_MAC
+                if (name.containsIgnoreCase("mac") || name.endsWithIgnoreCase(".dmg") || name.endsWithIgnoreCase(".zip"))
+               #elif JUCE_WINDOWS
+                if (name.containsIgnoreCase("win") || name.endsWithIgnoreCase(".exe") || name.endsWithIgnoreCase(".zip"))
+               #else
+                if (name.containsIgnoreCase("linux") || name.endsWithIgnoreCase(".tar.gz"))
+               #endif
+                {
+                    item.downloadUrl = dl;
+                    item.assetName = name;
+                    break;
+                }
+            }
+        }
+    }
+
+    return item;
+}
 } // namespace
 
 juce::String UpdateService::getCurrentVersion()
@@ -109,8 +167,9 @@ void UpdateService::checkForUpdatesAsync(UpdateCallback onComplete)
         UpdateInfo info;
         info.currentVersion = getCurrentVersion();
 
-        juce::URL url(kLatestReleaseApi);
-        std::unique_ptr<juce::InputStream> stream(url.createInputStream(
+        // 1. Intentar listar releases recientes
+        juce::URL listUrl(kReleasesApi);
+        std::unique_ptr<juce::InputStream> stream(listUrl.createInputStream(
             juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
                 .withConnectionTimeoutMs(10000)
                 .withExtraHeaders("User-Agent: DiscNativePro-Updater\r\n"
@@ -119,40 +178,205 @@ void UpdateService::checkForUpdatesAsync(UpdateCallback onComplete)
         if (stream != nullptr)
         {
             auto json = juce::JSON::parse(stream->readEntireStreamAsString());
-            if (json.isObject())
+            if (json.isArray())
             {
-                info.latestTag = json["tag_name"].toString().trim();
-                info.latestVersion = info.latestTag;
-                if (info.latestVersion.startsWithChar('v') || info.latestVersion.startsWithChar('V'))
-                    info.latestVersion = info.latestVersion.substring(1);
-                info.releaseName = json["name"].toString();
-                info.releaseNotes = json["body"].toString();
-                info.pageUrl = json["html_url"].toString();
-                info.downloadUrl = info.pageUrl;
-
-                if (auto* assets = json["assets"].getArray())
+                auto* arr = json.getArray();
+                for (const auto& elem : *arr)
                 {
-                    for (auto& a : *assets)
-                    {
-                        auto name = a["name"].toString();
-                        auto dl = a["browser_download_url"].toString();
-                        if (name == kAssetName && dl.isNotEmpty())
-                        {
-                            info.downloadUrl = dl;
-                            break;
-                        }
-                    }
+                    auto item = parseReleaseItem(elem);
+                    if (item.version.isNotEmpty())
+                        info.allReleases.push_back(item);
                 }
+            }
+            else if (json.isObject())
+            {
+                auto item = parseReleaseItem(json);
+                if (item.version.isNotEmpty())
+                    info.allReleases.push_back(item);
+            }
+        }
 
-                if (info.latestVersion.isNotEmpty()
-                    && info.latestTag != getSkippedTag()
-                    && isNewerVersion(info.latestVersion, info.currentVersion))
+        // 2. Si falló la lista o vino vacía, intentar /releases/latest directamente
+        if (info.allReleases.empty())
+        {
+            juce::URL latestUrl(kLatestReleaseApi);
+            std::unique_ptr<juce::InputStream> latestStream(latestUrl.createInputStream(
+                juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                    .withConnectionTimeoutMs(10000)
+                    .withExtraHeaders("User-Agent: DiscNativePro-Updater\r\n"
+                                      "Accept: application/vnd.github+json\r\n")));
+
+            if (latestStream != nullptr)
+            {
+                auto json = juce::JSON::parse(latestStream->readEntireStreamAsString());
+                if (json.isObject())
                 {
-                    info.available = true;
+                    auto item = parseReleaseItem(json);
+                    if (item.version.isNotEmpty())
+                        info.allReleases.push_back(item);
                 }
             }
         }
 
+        // 3. Procesar release más reciente
+        if (!info.allReleases.empty())
+        {
+            const auto& latest = info.allReleases.front();
+            info.latestTag = latest.tagName;
+            info.latestVersion = latest.version;
+            info.releaseName = latest.name;
+            info.releaseNotes = latest.releaseNotes;
+            info.pageUrl = latest.pageUrl;
+            info.downloadUrl = latest.downloadUrl;
+            info.assetName = latest.assetName;
+
+            if (info.latestVersion.isNotEmpty()
+                && info.latestTag != getSkippedTag()
+                && isNewerVersion(info.latestVersion, info.currentVersion))
+            {
+                info.available = true;
+            }
+        }
+
         juce::MessageManager::callAsync([onComplete, info]() { onComplete(info); });
+    });
+}
+
+void UpdateService::downloadAndOpenReleaseAsset(
+    const juce::String& downloadUrl,
+    const juce::String& assetName,
+    std::function<void(float progress, const juce::String& statusText)> onProgress,
+    std::function<void(bool success, const juce::String& errorMessage, const juce::File& file)> onComplete)
+{
+    juce::Thread::launch([downloadUrl, assetName, onProgress, onComplete]() {
+        if (downloadUrl.isEmpty())
+        {
+            if (onComplete)
+                juce::MessageManager::callAsync([onComplete]() {
+                    onComplete(false, "URL de descarga vacía.", {});
+                });
+            return;
+        }
+
+        // Si es una página web general en vez de un archivo instalable, abrir navegador
+        if (!downloadUrl.endsWithIgnoreCase(".zip") &&
+            !downloadUrl.endsWithIgnoreCase(".dmg") &&
+            !downloadUrl.endsWithIgnoreCase(".exe") &&
+            !downloadUrl.endsWithIgnoreCase(".tar.gz"))
+        {
+            juce::URL(downloadUrl).launchInDefaultBrowser();
+            if (onComplete)
+                juce::MessageManager::callAsync([onComplete]() {
+                    onComplete(true, {}, {});
+                });
+            return;
+        }
+
+        auto dlFolder = juce::File::getSpecialLocation(juce::File::userHomeDirectory).getChildFile("Downloads");
+        if (!dlFolder.exists())
+            dlFolder = juce::File::getSpecialLocation(juce::File::userHomeDirectory);
+
+        juce::String safeFileName = assetName.isNotEmpty() ? assetName : downloadUrl.fromLastOccurrenceOf("/", false, false);
+        if (safeFileName.isEmpty())
+            safeFileName = "DiscNativePro-Update.zip";
+
+        auto targetFile = dlFolder.getChildFile(safeFileName);
+        if (targetFile.existsAsFile())
+            targetFile.deleteFile();
+
+        juce::URL url(downloadUrl);
+        std::unique_ptr<juce::InputStream> stream(url.createInputStream(
+            juce::URL::InputStreamOptions(juce::URL::ParameterHandling::inAddress)
+                .withConnectionTimeoutMs(15000)
+                .withNumRedirectsToFollow(10)
+                .withExtraHeaders("User-Agent: DiscNativePro-Updater\r\n"
+                                  "Accept: application/octet-stream\r\n")));
+
+        if (stream == nullptr)
+        {
+            if (onComplete)
+                juce::MessageManager::callAsync([onComplete]() {
+                    onComplete(false, "No se pudo conectar al servidor de descargas.", {});
+                });
+            return;
+        }
+
+        juce::int64 totalLength = stream->getTotalLength();
+        std::unique_ptr<juce::FileOutputStream> out(targetFile.createOutputStream());
+        if (out == nullptr || !out->openedOk())
+        {
+            if (onComplete)
+                juce::MessageManager::callAsync([onComplete]() {
+                    onComplete(false, "No se pudo crear el archivo en Descargas.", {});
+                });
+            return;
+        }
+
+        constexpr juce::int64 bufferSize = 64 * 1024;
+        juce::HeapBlock<char> buffer((size_t)bufferSize);
+        juce::int64 bytesWritten = 0;
+
+        while (!stream->isExhausted())
+        {
+            int read = stream->read(buffer.get(), (int)bufferSize);
+            if (read <= 0)
+                break;
+
+            out->write(buffer.get(), (size_t)read);
+            bytesWritten += read;
+
+            if (onProgress && totalLength > 0)
+            {
+                float prog = (float)bytesWritten / (float)totalLength;
+                juce::String status = juce::String::formatted("%.1f MB / %.1f MB",
+                                                              (double)bytesWritten / (1024.0 * 1024.0),
+                                                              (double)totalLength / (1024.0 * 1024.0));
+                juce::MessageManager::callAsync([onProgress, prog, status]() {
+                    onProgress(prog, status);
+                });
+            }
+        }
+
+        out->flush();
+        out.reset();
+
+        bool success = targetFile.existsAsFile() && targetFile.getSize() > 1000;
+        if (success)
+        {
+            juce::MessageManager::callAsync([onComplete, targetFile]() {
+               #if JUCE_MAC
+                if (targetFile.getFileExtension().equalsIgnoreCase(".dmg"))
+                {
+                    targetFile.startAsProcess();
+                }
+                else
+                {
+                    targetFile.revealToUser();
+                    targetFile.startAsProcess();
+                }
+               #elif JUCE_WINDOWS
+                if (targetFile.getFileExtension().equalsIgnoreCase(".exe"))
+                {
+                    targetFile.startAsProcess();
+                }
+                else
+                {
+                    targetFile.revealToUser();
+                }
+               #else
+                targetFile.revealToUser();
+               #endif
+
+                if (onComplete)
+                    onComplete(true, {}, targetFile);
+            });
+        }
+        else
+        {
+            if (onComplete)
+                juce::MessageManager::callAsync([onComplete]() {
+                    onComplete(false, "El archivo descargado está incompleto o dañado.", {});
+                });
+        }
     });
 }

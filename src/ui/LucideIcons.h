@@ -40,7 +40,8 @@ public:
         Bookmark,
         Check,
         Download,
-        Video
+        Video,
+        Tag
     };
 
     // Draw the icon vector scaled into the destination rectangle

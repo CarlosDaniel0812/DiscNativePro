@@ -87,34 +87,9 @@ MainComponent::MainComponent()
         openSettings(0);
     };
 
-    // Update badge: abre el diálogo si hay update pendiente; si no, re-chequea
-    // en vivo (auto-reparador ante estados rancios) y abre solo si encuentra.
+    // Update badge: abre directamente la pestaña de Versión en Preferencias / Ajustes
     topBar.onUpdateClicked = [this]() {
-        if (updateDialogShown)
-            return; // diálogo ya abierto: no apilar
-        if (pendingUpdate.available)
-        {
-            showUpdateDialog(pendingUpdate);
-            return;
-        }
-        if (updateRechecking)
-            return;
-        updateRechecking = true;
-        juce::Component::SafePointer<MainComponent> safeThis(this);
-        UpdateService::checkForUpdatesAsync([safeThis](const UpdateInfo& info) {
-            if (safeThis == nullptr)
-                return;
-            safeThis->updateRechecking = false;
-            if (!info.available)
-            {
-                safeThis->pendingUpdate = {};
-                safeThis->topBar.setUpdateAvailable(false);
-                return;
-            }
-            safeThis->pendingUpdate = info;
-            safeThis->topBar.setUpdateAvailable(true);
-            safeThis->showUpdateDialog(info);
-        });
+        openSettings(9);
     };
 
     addChildComponent(fxPanel);
@@ -945,6 +920,10 @@ void MainComponent::openSettings(int targetTab)
         library.scanDownloadsFolder();
     };
 
+    modal->onUpdateAvailabilityChanged = [this](bool available) {
+        topBar.setUpdateAvailable(available);
+    };
+
     modal->onClose = [this]() {
         if (settingsWindow != nullptr)
         {
@@ -970,50 +949,4 @@ void MainComponent::scheduleUpdateCheck()
             safeThis->topBar.setUpdateAvailable(true);
         });
     });
-}
-
-void MainComponent::showUpdateDialog(const UpdateInfo& info)
-{
-    if (updateDialogShown)
-        return;
-    updateDialogShown = true;
-
-    auto title = LanguageManager::trUtf8("Nueva versión disponible: ", "New version available: ")
-               + info.latestVersion;
-    juce::String notes = info.releaseNotes.trim();
-    if (notes.length() > 800)
-        notes = notes.substring(0, 800) + "...";
-    if (notes.isEmpty())
-        notes = LanguageManager::trUtf8("Hay una nueva versión de DiscNativePro lista para descargar.",
-                                        "A new version of DiscNativePro is ready to download.");
-    auto message = LanguageManager::trUtf8("Tu versión: ", "Your version: ")
-                 + info.currentVersion + "\n\n" + notes;
-
-    juce::AlertWindow::showAsync(
-        juce::MessageBoxOptions()
-            .withIconType(juce::AlertWindow::QuestionIcon)
-            .withTitle(title)
-            .withMessage(message)
-            .withButton(LanguageManager::trUtf8("Descargar", "Download"))
-            .withButton(LanguageManager::trUtf8("Omitir versión", "Skip version"))
-            .withButton(LanguageManager::trUtf8("Más tarde", "Later")),
-        juce::ModalCallbackFunction::create([safeThis = juce::Component::SafePointer<MainComponent>(this),
-                                             info](int result) {
-            if (safeThis == nullptr)
-                return;
-            safeThis->updateDialogShown = false;
-            if (result == 0) // Descargar
-            {
-                juce::String url = info.downloadUrl.isNotEmpty() ? info.downloadUrl : info.pageUrl;
-                if (url.isNotEmpty())
-                    juce::URL(url).launchInDefaultBrowser();
-            }
-            else if (result == 1) // Omitir versión
-            {
-                UpdateService::setSkippedTag(info.latestTag);
-                safeThis->pendingUpdate = {};
-                safeThis->topBar.setUpdateAvailable(false);
-            }
-            // "Más tarde": el badge queda visible para reabrir el diálogo.
-        }));
 }

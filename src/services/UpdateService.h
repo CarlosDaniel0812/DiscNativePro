@@ -3,6 +3,17 @@
 #include <juce_core/juce_core.h>
 #include <functional>
 
+struct ReleaseItem
+{
+    juce::String tagName;      // p.ej. "v1.2.0"
+    juce::String version;      // "1.2.0"
+    juce::String name;
+    juce::String releaseNotes;
+    juce::String downloadUrl;  // Asset directo para el SO actual o pageUrl
+    juce::String pageUrl;      // html_url del release
+    juce::String assetName;    // Nombre del archivo a descargar
+};
+
 // Resultado del chequeo de actualización contra GitHub Releases.
 // Todo el chequeo corre en background thread; el callback llega en Message Thread.
 struct UpdateInfo
@@ -15,6 +26,8 @@ struct UpdateInfo
     juce::String releaseNotes;   // body del release (puede estar vacío)
     juce::String downloadUrl;    // asset de esta plataforma, o html_url como fallback
     juce::String pageUrl;        // html_url del release
+    juce::String assetName;
+    std::vector<ReleaseItem> allReleases; // Lista de versiones disponibles en GitHub
 };
 
 class UpdateService
@@ -25,6 +38,13 @@ public:
     // Lanza el chequeo en background y responde en Message Thread.
     // Nunca lanza: sin red, timeout, rate-limit o tag omitido => available=false.
     static void checkForUpdatesAsync(UpdateCallback onComplete);
+
+    // Descarga el asset a Descargas con progreso (0.0f - 1.0f) y lo abre/ejecuta al terminar.
+    static void downloadAndOpenReleaseAsset(
+        const juce::String& downloadUrl,
+        const juce::String& assetName,
+        std::function<void(float progress, const juce::String& statusText)> onProgress,
+        std::function<void(bool success, const juce::String& errorMessage, const juce::File& file)> onComplete);
 
     static juce::String getCurrentVersion();
     static bool isNewerVersion(const juce::String& latest, const juce::String& current);

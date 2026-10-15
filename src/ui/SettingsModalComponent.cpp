@@ -5,9 +5,9 @@
 SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager& midiMgr, int initialTab)
     : audioEngine(engine), midi(midiMgr), activeTab(initialTab)
 {
-    setSize(720, 540);
+    setSize(740, 540);
 
-    // 1. Tab Buttons (9 tabs)
+    // 1. Tab Buttons (10 tabs)
     auto setupTabBtn = [this](DjButton& btn, LucideIcons::IconType icon, const juce::String& text, int tabIdx) {
         btn.setIcon(icon, 14.0f);
         btn.setText(text);
@@ -32,6 +32,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupTabBtn(tabAIBtn, LucideIcons::IconType::Sparkles, "IA Match", 6);
     setupTabBtn(tabDonateBtn, LucideIcons::IconType::Coffee, "Donar", 7);
     setupTabBtn(tabDesignBtn, LucideIcons::IconType::Sliders, "Diseño", 8);
+    setupTabBtn(tabVersionBtn, LucideIcons::IconType::Tag, "Versión", 9);
 
     // 3. Setup Tab Contents
     bodyViewport.setViewedComponent(&bodyContent, false);
@@ -46,6 +47,7 @@ SettingsModalComponent::SettingsModalComponent(AudioEngine& engine, MidiManager&
     setupAITab();
     setupDonateTab();
     setupDesignTab();
+    setupVersionTab();
 
     // 4. Footer controls
     undoButton.setButtonText("Deshacer");
@@ -554,6 +556,16 @@ void SettingsModalComponent::refreshLanguage()
     presetSilverBtn.setText(LanguageManager::trUtf8("Plata Mono", "Mono Silver"));
     refreshDesignSwatches();
 
+    // Tab 9: Versión / Version
+    tabVersionBtn.setText(LanguageManager::trUtf8("Versión", "Version"));
+    versionSectionTitle.setText(LanguageManager::trUtf8("Versión", "Version"), juce::dontSendNotification);
+    versionChangeTitle.setText(LanguageManager::trUtf8("Cambiar de versión", "Change version"), juce::dontSendNotification);
+    checkUpdatesBtn.setText(LanguageManager::trUtf8("Buscar actualizaciones", "Check for updates"));
+    installVersionBtn.setText(LanguageManager::trUtf8("Instalar", "Install"));
+    versionHelpIcon.setTooltip(LanguageManager::trUtf8(
+        "Selecciona cualquier versión oficial disponible en GitHub Releases para instalarla o cambiar de versión.",
+        "Select any official version available in GitHub Releases to install or switch versions."));
+
     updateTabVisibility();
     repaint();
 }
@@ -1024,6 +1036,190 @@ void SettingsModalComponent::setupDesignTab()
     refreshDesignSwatches();
 }
 
+void SettingsModalComponent::setupVersionTab()
+{
+    // Section: Versión
+    versionSectionTitle.setText(LanguageManager::trUtf8("Versión", "Version"), juce::dontSendNotification);
+    versionSectionTitle.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    versionSectionTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(142, 149, 165));
+    bodyContent.addChildComponent(versionSectionTitle);
+
+    versionAppTitle.setText("DiscNativePro " + UpdateService::getCurrentVersion(), juce::dontSendNotification);
+    versionAppTitle.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+    versionAppTitle.setColour(juce::Label::textColourId, juce::Colours::white);
+    bodyContent.addChildComponent(versionAppTitle);
+
+    versionStatusLabel.setText("DiscNativePro " + UpdateService::getCurrentVersion() +
+                               LanguageManager::trUtf8(" es la última versión.", " is the latest version."),
+                               juce::dontSendNotification);
+    versionStatusLabel.setFont(juce::FontOptions(11.5f));
+    versionStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
+    bodyContent.addChildComponent(versionStatusLabel);
+
+    checkUpdatesBtn.setText(LanguageManager::trUtf8("Buscar actualizaciones", "Check for updates"));
+    checkUpdatesBtn.setFontSize(11.0f);
+    checkUpdatesBtn.setCornerRadius(6.0f);
+    checkUpdatesBtn.setCustomColours(juce::Colour::fromRGB(32, 35, 48),
+                                    juce::Colours::white,
+                                    juce::Colours::white,
+                                    juce::Colour::fromRGB(55, 60, 78));
+    checkUpdatesBtn.onClick = [this]() { checkUpdatesFromUI(); };
+    bodyContent.addChildComponent(checkUpdatesBtn);
+
+    // Section: Cambiar de versión
+    versionChangeTitle.setText(LanguageManager::trUtf8("Cambiar de versión", "Change version"), juce::dontSendNotification);
+    versionChangeTitle.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    versionChangeTitle.setColour(juce::Label::textColourId, juce::Colours::white);
+    bodyContent.addChildComponent(versionChangeTitle);
+
+    versionHelpIcon.setText("(?)", juce::dontSendNotification);
+    versionHelpIcon.setFont(juce::FontOptions(11.0f));
+    versionHelpIcon.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 145, 160));
+    versionHelpIcon.setTooltip(LanguageManager::trUtf8(
+        "Selecciona cualquier versión oficial disponible en GitHub Releases para instalarla o cambiar de versión.",
+        "Select any official version available in GitHub Releases to install or switch versions."));
+    bodyContent.addChildComponent(versionHelpIcon);
+
+    versionSelectCombo.setTextWhenNothingSelected(LanguageManager::trUtf8("Buscar versiones disponibles...", "Check available versions..."));
+    versionSelectCombo.setColour(juce::ComboBox::backgroundColourId, juce::Colour::fromRGB(22, 25, 34));
+    versionSelectCombo.setColour(juce::ComboBox::textColourId, juce::Colours::white);
+    versionSelectCombo.setColour(juce::ComboBox::outlineColourId, juce::Colour::fromRGB(45, 50, 68));
+    bodyContent.addChildComponent(versionSelectCombo);
+
+    installVersionBtn.setIcon(LucideIcons::IconType::Download, 13.0f);
+    installVersionBtn.setText(LanguageManager::trUtf8("Instalar", "Install"));
+    installVersionBtn.setFontSize(11.5f);
+    installVersionBtn.setCornerRadius(6.0f);
+    installVersionBtn.setCustomColours(juce::Colour::fromRGB(14, 165, 233),
+                                       juce::Colours::white,
+                                       juce::Colours::white,
+                                       juce::Colour::fromRGB(2, 132, 199));
+    installVersionBtn.onClick = [this]() {
+        if (isDownloading)
+            return;
+
+        int selIdx = versionSelectCombo.getSelectedId() - 1;
+        if (selIdx < 0 || selIdx >= (int)availableReleases.size())
+        {
+            juce::URL("https://github.com/axel-molina/DiscNativePro/releases").launchInDefaultBrowser();
+            return;
+        }
+
+        const auto& chosen = availableReleases[(size_t)selIdx];
+        juce::String url = chosen.downloadUrl.isNotEmpty() ? chosen.downloadUrl : chosen.pageUrl;
+        juce::String assetName = chosen.assetName;
+
+        isDownloading = true;
+        installVersionBtn.setEnabled(false);
+        checkUpdatesBtn.setEnabled(false);
+        downloadProgressValue = 0.0;
+        downloadProgressBar.setVisible(true);
+        downloadStatusLabel.setVisible(true);
+        downloadStatusLabel.setText(LanguageManager::trUtf8("Iniciando descarga...", "Starting download..."), juce::dontSendNotification);
+        downloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(56, 189, 248));
+        resized();
+
+        juce::Component::SafePointer<SettingsModalComponent> safeThis(this);
+        UpdateService::downloadAndOpenReleaseAsset(
+            url,
+            assetName,
+            [safeThis](float progress, const juce::String& statusText) {
+                if (safeThis == nullptr) return;
+                safeThis->downloadProgressValue = progress;
+                safeThis->downloadStatusLabel.setText(
+                    LanguageManager::trUtf8("Descargando: ", "Downloading: ") + statusText,
+                    juce::dontSendNotification);
+                safeThis->downloadProgressBar.repaint();
+            },
+            [safeThis](bool success, const juce::String& errMsg, const juce::File& /*file*/) {
+                if (safeThis == nullptr) return;
+                safeThis->isDownloading = false;
+                safeThis->installVersionBtn.setEnabled(true);
+                safeThis->checkUpdatesBtn.setEnabled(true);
+
+                if (success)
+                {
+                    safeThis->downloadProgressValue = 1.0;
+                    safeThis->downloadStatusLabel.setText(
+                        LanguageManager::trUtf8("¡Descarga completada! Abriendo instalador...", "Download complete! Opening installer..."),
+                        juce::dontSendNotification);
+                    safeThis->downloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128));
+                }
+                else
+                {
+                    safeThis->downloadProgressValue = -1.0;
+                    safeThis->downloadStatusLabel.setText(
+                        LanguageManager::trUtf8("Error en la descarga: ", "Download error: ") + errMsg,
+                        juce::dontSendNotification);
+                    safeThis->downloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(244, 63, 94));
+                }
+                safeThis->downloadProgressBar.setVisible(false);
+                safeThis->resized();
+            });
+    };
+    bodyContent.addChildComponent(installVersionBtn);
+
+    downloadStatusLabel.setFont(juce::FontOptions(11.0f));
+    downloadStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(56, 189, 248));
+    bodyContent.addChildComponent(downloadStatusLabel);
+
+    downloadProgressBar.setPercentageDisplay(false);
+    downloadProgressBar.setColour(juce::ProgressBar::foregroundColourId, juce::Colour::fromRGB(14, 165, 233));
+    downloadProgressBar.setColour(juce::ProgressBar::backgroundColourId, juce::Colour::fromRGB(26, 29, 38));
+    bodyContent.addChildComponent(downloadProgressBar);
+}
+
+void SettingsModalComponent::checkUpdatesFromUI()
+{
+    if (isCheckingUpdates || isDownloading)
+        return;
+
+    isCheckingUpdates = true;
+    checkUpdatesBtn.setEnabled(false);
+    versionStatusLabel.setText(LanguageManager::trUtf8("Buscando actualizaciones en GitHub...", "Checking for updates on GitHub..."), juce::dontSendNotification);
+    versionStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(148, 163, 184));
+
+    juce::Component::SafePointer<SettingsModalComponent> safeThis(this);
+    UpdateService::checkForUpdatesAsync([safeThis](const UpdateInfo& info) {
+        if (safeThis == nullptr)
+            return;
+
+        safeThis->isCheckingUpdates = false;
+        safeThis->checkUpdatesBtn.setEnabled(true);
+        safeThis->availableReleases = info.allReleases;
+
+        safeThis->versionSelectCombo.clear(juce::dontSendNotification);
+        int id = 1;
+        for (const auto& rel : safeThis->availableReleases)
+        {
+            juce::String label = rel.tagName;
+            if (id == 1)
+                label += LanguageManager::trUtf8(" (Última versión)", " (Latest release)");
+            safeThis->versionSelectCombo.addItem(label, id++);
+        }
+        if (safeThis->versionSelectCombo.getNumItems() > 0)
+            safeThis->versionSelectCombo.setSelectedId(1, juce::dontSendNotification);
+
+        if (info.available)
+        {
+            safeThis->versionStatusLabel.setText(
+                LanguageManager::trUtf8("¡Hay una nueva versión disponible! (", "A new version is available! (") + info.latestTag + ")",
+                juce::dontSendNotification);
+            safeThis->versionStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(245, 158, 11)); // Ámbar
+        }
+        else
+        {
+            safeThis->versionStatusLabel.setText(
+                "DiscNativePro " + info.currentVersion + LanguageManager::trUtf8(" es la última versión.", " is the latest version."),
+                juce::dontSendNotification);
+            safeThis->versionStatusLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(74, 222, 128)); // Verde
+        }
+
+        if (safeThis->onUpdateAvailabilityChanged)
+            safeThis->onUpdateAvailabilityChanged(info.available);
+    });
+}
+
 void SettingsModalComponent::refreshDesignSwatches()
 {
     auto paintSwatch = [](DjButton& btn, juce::Colour c) {
@@ -1299,6 +1495,24 @@ void SettingsModalComponent::updateTabVisibility()
     presetNeonBtn.setVisible(isDesign);
     presetSilverBtn.setVisible(isDesign);
 
+    // Version components (Tab 9)
+    bool isVersion = (activeTab == 9);
+    versionSectionTitle.setVisible(isVersion);
+    versionAppTitle.setVisible(isVersion);
+    versionStatusLabel.setVisible(isVersion);
+    checkUpdatesBtn.setVisible(isVersion);
+    versionChangeTitle.setVisible(isVersion);
+    versionHelpIcon.setVisible(isVersion);
+    versionSelectCombo.setVisible(isVersion);
+    installVersionBtn.setVisible(isVersion);
+    downloadStatusLabel.setVisible(isVersion && downloadStatusLabel.getText().isNotEmpty());
+    downloadProgressBar.setVisible(isVersion && isDownloading);
+
+    if (isVersion && availableReleases.empty() && !isCheckingUpdates)
+    {
+        checkUpdatesFromUI();
+    }
+
     // Tab buttons styling
     auto updateBtnStyle = [](DjButton& btn, bool active) {
         if (active)
@@ -1325,6 +1539,7 @@ void SettingsModalComponent::updateTabVisibility()
     updateBtnStyle(tabAIBtn, activeTab == 6);
     updateBtnStyle(tabDonateBtn, activeTab == 7);
     updateBtnStyle(tabDesignBtn, activeTab == 8);
+    updateBtnStyle(tabVersionBtn, activeTab == 9);
 }
 
 void SettingsModalComponent::applySettings()
@@ -1541,11 +1756,11 @@ void SettingsModalComponent::paint(juce::Graphics& g)
 
 void SettingsModalComponent::resized()
 {
-    // 1. Tab buttons row (y: 8 to 42) — 9 tabs, modal 720px wide
-    int tabW = 74;
+    // 1. Tab buttons row (y: 8 to 42) — 10 tabs, modal 740px wide
+    int tabW = 68;
     int tabH = 34;
-    int spacing = 4;
-    int totalTabsW = tabW * 9 + spacing * 8;
+    int spacing = 3;
+    int totalTabsW = tabW * 10 + spacing * 9;
     int startTabX = (getWidth() - totalTabsW) / 2;
 
     tabGeneralBtn.setBounds(startTabX, 8, tabW, tabH);
@@ -1557,6 +1772,7 @@ void SettingsModalComponent::resized()
     tabAIBtn.setBounds(startTabX + (tabW + spacing) * 6, 8, tabW, tabH);
     tabDonateBtn.setBounds(startTabX + (tabW + spacing) * 7, 8, tabW, tabH);
     tabDesignBtn.setBounds(startTabX + (tabW + spacing) * 8, 8, tabW, tabH);
+    tabVersionBtn.setBounds(startTabX + (tabW + spacing) * 9, 8, tabW, tabH);
 
     // 2. Tab Body Area con scroll (el contenido vive en bodyContent, no en this)
     auto bodyRect = getLocalBounds();
@@ -1862,6 +2078,40 @@ void SettingsModalComponent::resized()
         presetNeonBtn.setBounds(presetRow.removeFromLeft(presetW));
         presetRow.removeFromLeft(8);
         presetSilverBtn.setBounds(presetRow);
+    }
+
+    // --- Tab 9: Versión Layout (Unconditionally set bounds) ---
+    {
+        auto vArea = body;
+        versionSectionTitle.setBounds(vArea.removeFromTop(20));
+        vArea.removeFromTop(4);
+
+        versionAppTitle.setBounds(vArea.removeFromTop(32));
+        vArea.removeFromTop(2);
+
+        versionStatusLabel.setBounds(vArea.removeFromTop(22));
+        vArea.removeFromTop(12);
+
+        checkUpdatesBtn.setBounds(vArea.removeFromTop(32).removeFromLeft(180));
+        vArea.removeFromTop(24);
+
+        // Section: Cambiar de versión
+        auto titleRow = vArea.removeFromTop(22);
+        versionChangeTitle.setBounds(titleRow.removeFromLeft(160));
+        versionHelpIcon.setBounds(titleRow.removeFromLeft(30));
+        vArea.removeFromTop(8);
+
+        auto actionRow = vArea.removeFromTop(34);
+        int installBtnW = 120;
+        int comboW = juce::jmax(200, actionRow.getWidth() - installBtnW - 12);
+        versionSelectCombo.setBounds(actionRow.removeFromLeft(comboW));
+        actionRow.removeFromLeft(12);
+        installVersionBtn.setBounds(actionRow.removeFromLeft(installBtnW));
+        vArea.removeFromTop(12);
+
+        downloadProgressBar.setBounds(vArea.removeFromTop(8));
+        vArea.removeFromTop(4);
+        downloadStatusLabel.setBounds(vArea.removeFromTop(20));
     }
 
     }; // layoutTabs
