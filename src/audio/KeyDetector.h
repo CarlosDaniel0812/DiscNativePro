@@ -18,7 +18,7 @@ class KeyDetector
 {
 public:
     // maxSeconds acota el análisis para no alargar la carga (0 = archivo entero)
-    static KeyAnalysisResult analyze(juce::AudioFormatReader* reader, double maxSeconds = 180.0);
+    static KeyAnalysisResult analyze(juce::AudioFormatReader* reader, double maxSeconds = 60.0);
 
     static juce::String camelotFor(int rootPc, bool minor);
 };

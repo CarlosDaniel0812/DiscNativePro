@@ -542,9 +542,91 @@ private:
     bool isSaveEnabled { false };
 };
 
+class LibraryComponent::BackgroundBpmScanner : public juce::Thread
+{
+public:
+    BackgroundBpmScanner(juce::AudioFormatManager& fm, std::function<void(const juce::File&, double)> onBpmReady)
+        : juce::Thread("BpmBackgroundScanner"), formatManager(fm), callback(std::move(onBpmReady))
+    {
+    }
+
+    ~BackgroundBpmScanner() override
+    {
+        signalThreadShouldExit();
+        notify();
+        stopThread(2000);
+    }
+
+    void queueTrack(const juce::File& file)
+    {
+        {
+            const juce::ScopedLock sl(queueLock);
+            if (std::find(pendingFiles.begin(), pendingFiles.end(), file) == pendingFiles.end())
+                pendingFiles.push_back(file);
+        }
+        notify();
+        if (!isThreadRunning())
+            startThread(juce::Thread::Priority::low);
+    }
+
+    void clearQueue()
+    {
+        const juce::ScopedLock sl(queueLock);
+        pendingFiles.clear();
+    }
+
+    void run() override
+    {
+        while (!threadShouldExit())
+        {
+            juce::File nextFile;
+            {
+                const juce::ScopedLock sl(queueLock);
+                if (pendingFiles.empty())
+                {
+                    wait(500);
+                    if (pendingFiles.empty() || threadShouldExit())
+                        break;
+                }
+                if (threadShouldExit()) break;
+                nextFile = pendingFiles.front();
+                pendingFiles.erase(pendingFiles.begin());
+            }
+
+            if (nextFile.existsAsFile() && !threadShouldExit())
+            {
+                std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(nextFile));
+                if (reader != nullptr && !threadShouldExit())
+                {
+                    auto beatRes = BeatDetector::analyze(reader.get());
+                    if (beatRes.bpm >= 40.0 && beatRes.bpm <= 250.0 && callback && !threadShouldExit())
+                    {
+                        double detectedBpm = beatRes.bpm;
+                        juce::MessageManager::callAsync([cb = callback, f = nextFile, bpm = detectedBpm]() {
+                            cb(f, bpm);
+                        });
+                    }
+                }
+            }
+
+            wait(20);
+        }
+    }
+
+private:
+    juce::AudioFormatManager& formatManager;
+    std::function<void(const juce::File&, double)> callback;
+    juce::CriticalSection queueLock;
+    std::vector<juce::File> pendingFiles;
+};
+
 LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     : formatManager(fm)
 {
+    bpmScanner = std::make_unique<BackgroundBpmScanner>(formatManager, [this](const juce::File& file, double bpm) {
+        updateTrackBpm(file, bpm);
+    });
+
     // 1. Far-Left Vertical Icon Rail
     auto setupRailIcon = [this](DjButton& btn, LucideIcons::IconType iconType, juce::Colour col, bool active) {
         btn.setIcon(iconType, 16.0f);
@@ -767,6 +849,14 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
 
 LibraryComponent::~LibraryComponent()
 {
+    if (bpmScanner != nullptr)
+    {
+        bpmScanner->clearQueue();
+        bpmScanner->signalThreadShouldExit();
+        bpmScanner->notify();
+        bpmScanner->stopThread(2000);
+        bpmScanner.reset();
+    }
     LanguageManager::getInstance().removeListener(this);
 }
 
@@ -969,15 +1059,11 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
             item.key = keyStr;
         }
 
-        // 3. If BPM not in metadata, analyze audio content with BeatDetector
-        if (!bpmFound)
+        // 3. If BPM not in metadata, queue for asynchronous background analysis (zero UI freeze)
+        if (!bpmFound && !isDemo)
         {
-            auto beatRes = BeatDetector::analyze(reader.get());
-            if (beatRes.bpm > 0.0)
-            {
-                item.bpm = beatRes.bpm;
-                bpmFound = true;
-            }
+            if (bpmScanner != nullptr)
+                bpmScanner->queueTrack(file);
         }
     }
     else

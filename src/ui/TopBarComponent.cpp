@@ -30,15 +30,6 @@ TopBarComponent::TopBarComponent()
     fxButton.onClick = [this]() { if (onFxClicked) onFxClicked(); };
     addAndMakeVisible(fxButton);
 
-    stemsButton.setIcon(LucideIcons::IconType::Sliders, 13.0f);
-    stemsButton.setText("STEMS");
-    stemsButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
-                                 juce::Colour::fromRGB(148, 163, 184),
-                                 juce::Colour::fromRGB(148, 163, 184),
-                                 juce::Colour::fromRGB(45, 50, 65));
-    stemsButton.onClick = [this]() { if (onStemsClicked) onStemsClicked(); };
-    addAndMakeVisible(stemsButton);
-
     smpButton.setText("SMP");
     smpButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
                                juce::Colour::fromRGB(96, 165, 250),
@@ -135,7 +126,6 @@ void TopBarComponent::refreshLanguage()
     fullscreenButton.setTooltip(LanguageManager::trUtf8("Pantalla Completa", "Fullscreen"));
     recButton.setTooltip(LanguageManager::trUtf8("Grabar Sesión (⌘R / Ctrl+R)", "Record Session (⌘R / Ctrl+R)"));
     fxButton.setTooltip(LanguageManager::trUtf8("Panel de Efectos (FX)", "Effects Panel (FX)"));
-    stemsButton.setTooltip(LanguageManager::trUtf8("Separación de Pistas (STEMS)", "Track Separation (STEMS)"));
     layoutBadge.setText(LanguageManager::trUtf8("2 Bandejas", "2 Decks"));
     updateButton.setTooltip(LanguageManager::trUtf8("Nueva versión disponible — clic para ver", "New version available — click to view"));
 }
@@ -161,24 +151,6 @@ void TopBarComponent::setFxActive(bool active)
                                   juce::Colour::fromRGB(96, 165, 250),
                                   juce::Colour::fromRGB(96, 165, 250),
                                   juce::Colour::fromRGB(45, 50, 65));
-    }
-}
-
-void TopBarComponent::setStemsActive(bool active)
-{
-    if (active)
-    {
-        stemsButton.setCustomColours(juce::Colour::fromRGB(30, 41, 59),
-                                     juce::Colour::fromRGB(56, 189, 248),
-                                     juce::Colour::fromRGB(56, 189, 248),
-                                     juce::Colour::fromRGB(56, 189, 248).withAlpha(0.6f));
-    }
-    else
-    {
-        stemsButton.setCustomColours(juce::Colour::fromRGB(24, 26, 32),
-                                     juce::Colour::fromRGB(148, 163, 184),
-                                     juce::Colour::fromRGB(148, 163, 184),
-                                     juce::Colour::fromRGB(45, 50, 65));
     }
 }
 
@@ -324,9 +296,7 @@ void TopBarComponent::resized()
     recButton.setBounds(area.removeFromLeft(78).reduced(0, 2));
     area.removeFromLeft(6);
     fxButton.setBounds(area.removeFromLeft(58).reduced(0, 2));
-    area.removeFromLeft(4);
-    stemsButton.setBounds(area.removeFromLeft(82).reduced(0, 2));
-    area.removeFromLeft(4);
+    area.removeFromLeft(6);
     smpButton.setBounds(area.removeFromLeft(58).reduced(0, 2));
 
     // Right Buttons & Indicators

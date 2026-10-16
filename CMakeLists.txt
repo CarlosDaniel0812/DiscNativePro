@@ -131,8 +131,6 @@ target_sources(DiscNativePro
         src/ui/FxSlotComponent.cpp
         src/ui/FxPanelComponent.h
         src/ui/FxPanelComponent.cpp
-        src/ui/StemsPanelComponent.h
-        src/ui/StemsPanelComponent.cpp
         src/ui/SamplerPanelComponent.h
         src/ui/SamplerPanelComponent.cpp
         src/ui/MainComponent.h

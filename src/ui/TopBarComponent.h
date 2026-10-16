@@ -20,13 +20,11 @@ public:
     void setRecordingState(bool recording, double elapsedSeconds = 0.0);
     bool isRecordingActive() const { return isRecording; }
     void setFxActive(bool active);
-    void setStemsActive(bool active);
     void setSmpActive(bool active);
     void setUpdateAvailable(bool available);
 
     std::function<void()> onRecClicked;
     std::function<void()> onFxClicked;
-    std::function<void()> onStemsClicked;
     std::function<void()> onSmpClicked;
     std::function<void()> onSettingsClicked;
     std::function<void()> onFullscreenClicked;
@@ -40,7 +38,6 @@ private:
     // Left buttons
     DjButton recButton;
     DjButton fxButton;
-    DjButton stemsButton;
     DjButton smpButton;
 
     // Center logo

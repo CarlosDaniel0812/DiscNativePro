@@ -85,7 +85,6 @@ public:
     const std::vector<float>& getPeaksHigh() const { return peaksHigh; }
     bool hasWaveformData() const { return !peaksLow.empty(); }
 
-    // File info
     juce::String getTrackTitle() const;
     juce::String getTrackArtist() const;
     juce::String getTrackKey() const;
@@ -104,6 +103,7 @@ private:
     std::unique_ptr<juce::ResamplingAudioSource> resamplingSource;
     std::unique_ptr<StretchAdapter> stretcher; // Key Lock (solo se usa con keylock ON)
     int numSrcChannels { 2 };
+    int expectedSamplesPerBlock { 512 };
 
     juce::File currentFile;
     juce::String trackTitle;

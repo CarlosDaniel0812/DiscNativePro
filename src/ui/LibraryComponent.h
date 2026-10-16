@@ -154,6 +154,9 @@ private:
     std::unique_ptr<DownloadsEmptyOverlay> downloadsEmptyOverlay;
     void updateDownloadsEmptyState();
 
+    class BackgroundBpmScanner;
+    std::unique_ptr<BackgroundBpmScanner> bpmScanner;
+
     // Hardware browsing state
     bool isBrowsingFolders { false };
 

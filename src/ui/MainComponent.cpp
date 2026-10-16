@@ -11,7 +11,6 @@
 MainComponent::MainComponent()
     : midiManager(audioEngine),
       fxPanel(audioEngine.getMixer()),
-      stemsPanel(audioEngine.getMixer()),
       samplerPanel(audioEngine.getSampler(), audioEngine.getFormatManager(),
                    [this]() { return audioEngine.getSampleRate(); }),
       deck1(0, audioEngine.getDeck(0), audioEngine, juce::Colour::fromRGB(0, 180, 216)),
@@ -55,14 +54,6 @@ MainComponent::MainComponent()
         resized();
     };
 
-    // STEMS Panel toggle (EQ kills por deck)
-    topBar.onStemsClicked = [this]() {
-        isStemsPanelVisible = !isStemsPanelVisible;
-        topBar.setStemsActive(isStemsPanelVisible);
-        stemsPanel.setVisible(isStemsPanelVisible);
-        resized();
-    };
-
     // Sampler Panel toggle (8 pads one-shot)
     topBar.onSmpClicked = [this]() {
         isSamplerPanelVisible = !isSamplerPanelVisible;
@@ -95,9 +86,6 @@ MainComponent::MainComponent()
     addChildComponent(fxPanel);
     fxPanel.setVisible(isFxPanelVisible);
     topBar.setFxActive(isFxPanelVisible);
-    addChildComponent(stemsPanel);
-    stemsPanel.setVisible(isStemsPanelVisible);
-    topBar.setStemsActive(isStemsPanelVisible);
     addChildComponent(samplerPanel);
     samplerPanel.setVisible(isSamplerPanelVisible);
     topBar.setSmpActive(isSamplerPanelVisible);
@@ -394,13 +382,7 @@ void MainComponent::resized()
         fxPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
     }
 
-    // 3b. Optional STEMS Strip (54px) above Library
-    if (isStemsPanelVisible)
-    {
-        stemsPanel.setBounds(area.removeFromBottom(54).reduced(6, 2));
-    }
-
-    // 3c. Optional Sampler Strip (76px) above Library
+    // 3b. Optional Sampler Strip (76px) above Library
     if (isSamplerPanelVisible)
     {
         samplerPanel.setBounds(area.removeFromBottom(76).reduced(6, 2));

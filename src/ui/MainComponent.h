@@ -7,7 +7,6 @@
 #include "MixerComponent.h"
 #include "LibraryComponent.h"
 #include "FxPanelComponent.h"
-#include "StemsPanelComponent.h"
 #include "SamplerPanelComponent.h"
 #include "../services/UpdateService.h"
 
@@ -33,7 +32,6 @@ private:
     // UI Structure matching DiscPro
     TopBarComponent topBar;
     FxPanelComponent fxPanel;
-    StemsPanelComponent stemsPanel;
     SamplerPanelComponent samplerPanel;
     DeckComponent deck1;
     DeckComponent deck2;
@@ -41,7 +39,6 @@ private:
     LibraryComponent library;
 
     bool isFxPanelVisible { true };
-    bool isStemsPanelVisible { false };
     bool isSamplerPanelVisible { false };
     juce::Component::SafePointer<juce::DialogWindow> settingsWindow;
 

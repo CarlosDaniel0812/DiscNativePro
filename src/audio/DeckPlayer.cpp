@@ -7,7 +7,8 @@
 #include <vector>
 
 DeckPlayer::DeckPlayer(juce::AudioFormatManager& fm, juce::TimeSliceThread& thread)
-    : formatManager(fm), diskThread(thread), stretcher(std::make_unique<StretchAdapter>())
+    : formatManager(fm), diskThread(thread),
+      stretcher(std::make_unique<StretchAdapter>())
 {
     for (size_t i = 0; i < hotCues.size(); ++i)
     {
@@ -88,12 +89,15 @@ bool DeckPlayer::loadFile(const juce::File& audioFile)
 
     if (currentSampleRate > 0.0)
     {
-        resamplingSource->prepareToPlay(512, currentSampleRate);
+        int blockSize = expectedSamplesPerBlock > 0 ? expectedSamplesPerBlock : 512;
+        bufferingSource->prepareToPlay(blockSize, currentSampleRate);
+        resamplingSource->prepareToPlay(blockSize, currentSampleRate);
         stretcher->prepare(currentSampleRate);
     }
 
     stretcher->reset();
     updatePlaybackSpeed();
+
     loaded.store(true);
 
     return true;
@@ -102,8 +106,13 @@ bool DeckPlayer::loadFile(const juce::File& audioFile)
 void DeckPlayer::prepareToPlay(int samplesPerBlockExpected, double sampleRate)
 {
     currentSampleRate = sampleRate;
+    expectedSamplesPerBlock = samplesPerBlockExpected;
 
     const juce::ScopedLock sl(lock);
+
+    if (bufferingSource != nullptr)
+        bufferingSource->prepareToPlay(samplesPerBlockExpected, sampleRate);
+
     if (resamplingSource != nullptr)
     {
         resamplingSource->prepareToPlay(samplesPerBlockExpected, sampleRate);
@@ -117,6 +126,8 @@ void DeckPlayer::releaseResources()
     const juce::ScopedLock sl(lock);
     if (resamplingSource != nullptr)
         resamplingSource->releaseResources();
+    if (bufferingSource != nullptr)
+        bufferingSource->releaseResources();
 }
 
 void DeckPlayer::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill)
@@ -274,7 +285,7 @@ void DeckPlayer::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToF
     }
 
     // Check End of Track
-    if (!scratchTouch.load() && getPosition() >= trackDurationSeconds.load())
+    if (!scratchTouch.load() && trackDurationSeconds.load() > 0.0 && getPosition() >= trackDurationSeconds.load())
     {
         playing.store(false);
         setPosition(trackDurationSeconds.load());
@@ -541,19 +552,26 @@ void DeckPlayer::extractWaveformOverview(juce::AudioFormatReader* reader)
     const int chunkSize = 65536;
     juce::AudioBuffer<float> chunkBuf(numCh, chunkSize);
     int64_t pos = 0;
+    const double invTotalSamples = (totalSamples > 0) ? ((double)numPoints / (double)totalSamples) : 0.0;
+
     while (pos < totalSamples)
     {
         int n = (int)juce::jmin<int64_t>((int64_t)chunkSize, totalSamples - pos);
         if (!reader->read(&chunkBuf, 0, n, pos, true, true))
             break;
+
+        const float* left = chunkBuf.getReadPointer(0);
+        const float* right = (numCh > 1) ? chunkBuf.getReadPointer(1) : nullptr;
+
         for (int i = 0; i < n; ++i)
         {
-            float v = 0.0f;
-            for (int ch = 0; ch < numCh; ++ch)
-                v += std::abs(chunkBuf.getReadPointer(ch)[i]);
-            v /= (float)numCh;
-            size_t p = (size_t)(((pos + i) * (int64_t)numPoints) / totalSamples);
+            float v = std::abs(left[i]);
+            if (right != nullptr)
+                v = (v + std::abs(right[i])) * 0.5f;
+
+            size_t p = static_cast<size_t>(static_cast<double>(pos + i) * invTotalSamples);
             if (p >= numPoints) p = numPoints - 1;
+
             if ((double)v > ptPeak[p]) ptPeak[p] = (double)v;
             ptSum[p] += (double)v;
             ptCount[p]++;
@@ -586,4 +604,6 @@ void DeckPlayer::extractWaveformOverview(juce::AudioFormatReader* reader)
         peaksHigh[p] /= maxH;
     }
 }
+
+
 
