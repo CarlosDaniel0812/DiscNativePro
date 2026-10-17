@@ -1,8 +1,9 @@
 name: Release Binaries
 
 # Cada tag v* (p.ej. v1.0.0) compila las 3 plataformas y publica
-# los binarios en el GitHub Release. La web enlaza a
-# .../releases/latest/download/<asset>, que siempre sirve lo último.
+# los binarios en el GitHub Release SOLO cuando todas finalicen con éxito.
+# De este modo, la versión 'latest' solo se actualiza cuando todos los
+# instaladores (Windows, Linux y macOS) están 100% disponibles.
 on:
   push:
     tags: [ "v*" ]
@@ -70,11 +71,12 @@ jobs:
 
           iscc "/DMyAppVersion=$ver" "installer\windows\installer.iss"
 
-      - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Windows Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: DiscNativePro-Windows-x64-Setup.exe
-          generate_release_notes: true
+          name: windows-artifact
+          path: DiscNativePro-Windows-x64-Setup.exe
+          if-no-files-found: error
 
   build-linux:
     name: Linux x64
@@ -131,11 +133,12 @@ jobs:
           chmod +x dist/run.sh dist/DiscNativePro
           tar -czvf DiscNativePro-Linux-x64.tar.gz -C dist .
 
-      - name: Publish to GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Linux Artifact
+        uses: actions/upload-artifact@v4
         with:
-          files: DiscNativePro-Linux-x64.tar.gz
-          generate_release_notes: true
+          name: linux-artifact
+          path: DiscNativePro-Linux-x64.tar.gz
+          if-no-files-found: error
 
   build-macos:
     name: macOS Universal
@@ -170,8 +173,38 @@ jobs:
           APP_DIR=$(dirname "$APP_PATH")
           (cd "$APP_DIR" && ditto -c -k --sequesterRsrc --keepParent DiscNativePro.app "$GITHUB_WORKSPACE/DiscNativePro-macOS-Universal.zip")
 
+      - name: Upload macOS Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-artifact
+          path: DiscNativePro-macOS-Universal.zip
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish Official Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos]
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifact
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifact
+
+      - name: Download macOS Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-artifact
+
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: DiscNativePro-macOS-Universal.zip
+          files: |
+            DiscNativePro-Windows-x64-Setup.exe
+            DiscNativePro-Linux-x64.tar.gz
+            DiscNativePro-macOS-Universal.zip
           generate_release_notes: true
