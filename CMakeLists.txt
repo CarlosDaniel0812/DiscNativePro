@@ -54,6 +54,7 @@ target_sources(DiscNativePro
         src/audio/DjMixer.cpp
         src/audio/BeatDetector.h
         src/audio/BeatDetector.cpp
+        src/audio/DynamicBeatgrid.h
         src/audio/KeyDetector.h
         src/audio/KeyDetector.cpp
         src/audio/DeckFxChain.h

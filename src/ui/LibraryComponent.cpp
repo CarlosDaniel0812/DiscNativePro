@@ -7,6 +7,7 @@
 #include "../services/YouTubeAudioDownloader.h"
 #include "../audio/SampleTrackGenerator.h"
 #include "../audio/BeatDetector.h"
+#include "../audio/KeyDetector.h"
 #include "CoverArtGenerator.h"
 #include <cstdio>
 
@@ -740,7 +741,7 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     table.getHeader().addColumn(juce::String::fromUTF8("ÁLBUM"), 5, 130, 80, 250);
     table.getHeader().addColumn(juce::String::fromUTF8("DURACIÓN"), 6, 68, 52, 90);
     table.getHeader().addColumn("BPM", 7, 62, 50, 80);
-    table.getHeader().addColumn("KEY", 8, 52, 42, 70);
+    table.getHeader().addColumn("KEY", 8, 76, 60, 100);
     table.getHeader().addColumn("CARGAR", 9, 74, 68, 85, juce::TableHeaderComponent::notSortable);
     table.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour::fromRGB(16, 18, 24));
     table.getHeader().setColour(juce::TableHeaderComponent::textColourId, juce::Colour::fromRGB(142, 149, 165));
@@ -1056,7 +1057,7 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
         if (keyStr.isNotEmpty())
         {
-            item.key = keyStr;
+            item.key = KeyDetector::formatKeyString(keyStr);
         }
 
         // 3. If BPM not in metadata, queue for asynchronous background analysis (zero UI freeze)
@@ -1089,19 +1090,19 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         if (item.title.containsIgnoreCase("Latin") || item.title.containsIgnoreCase("Groove"))
         {
             item.bpm = 124.0;
-            item.key = "8A";
+            item.key = "8A / Am";
             item.album = "Club Sessions Vol. 1";
         }
         else if (item.title.containsIgnoreCase("Sunset") || item.title.containsIgnoreCase("Beach"))
         {
             item.bpm = 126.0;
-            item.key = "11A";
+            item.key = "11A / F#m";
             item.album = "Ibiza Opening 2026";
         }
         else
         {
             item.bpm = 124.0;
-            item.key = "8A";
+            item.key = "8A / Am";
         }
     }
 
@@ -1415,15 +1416,17 @@ void LibraryComponent::paintCell(juce::Graphics& g, int rowNumber, int columnId,
 
         case 8: // Key
         {
-            auto pill = cellBounds.reduced(4, 7).toFloat();
-            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.15f));
-            g.fillRoundedRectangle(pill, 3.0f);
-            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.35f));
-            g.drawRoundedRectangle(pill, 3.0f, 1.0f);
+            auto pill = cellBounds.reduced(3, 6).toFloat();
+            auto keyCol = KeyDetector::getCamelotColour(track.key);
+            g.setColour(keyCol.withAlpha(0.16f));
+            g.fillRoundedRectangle(pill, 4.0f);
+            g.setColour(keyCol.withAlpha(0.40f));
+            g.drawRoundedRectangle(pill, 4.0f, 1.0f);
 
-            g.setColour(juce::Colour::fromRGB(0, 229, 255));
+            g.setColour(keyCol.brighter(0.25f));
             g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-            g.drawText(track.key, pill, juce::Justification::centred, false);
+            juce::String dispKey = KeyDetector::formatKeyString(track.key);
+            g.drawText(dispKey, pill, juce::Justification::centred, false);
             break;
         }
 
@@ -1703,7 +1706,7 @@ void LibraryComponent::handleAutomixDropTracks(const juce::String& description)
                 ti.artist = "Artista Local";
                 ti.album = "Local Audio";
                 ti.bpm = 124.0;
-                ti.key = "8A";
+                ti.key = "8A / Am";
                 ti.duration = 180.0;
 
                 std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
@@ -1736,7 +1739,7 @@ void LibraryComponent::handleAutomixDropTracks(const juce::String& description)
                     auto keyStr = reader->metadataValues.getValue("initialkey", "");
                     if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("TKEY", "");
                     if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
-                    if (keyStr.isNotEmpty()) ti.key = keyStr;
+                    if (keyStr.isNotEmpty()) ti.key = KeyDetector::formatKeyString(keyStr);
                 }
 
                 if (ti.duration <= 0.0 || ti.duration >= 60.0)

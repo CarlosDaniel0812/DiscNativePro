@@ -331,6 +331,10 @@ void DeckComponent::loadAudioFile(const juce::File& file)
         bpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
         pitchBpmLabel.setText(juce::String(bpm, 1), juce::dontSendNotification);
         keyBadge.setText(deck.getTrackKey(), juce::dontSendNotification);
+        auto keyCol = deck.getTrackKeyColour();
+        keyBadge.setColour(juce::Label::textColourId, keyCol);
+        keyBadge.setColour(juce::Label::backgroundColourId, keyCol.withAlpha(0.15f));
+        keyBadge.setColour(juce::Label::outlineColourId, keyCol.withAlpha(0.35f));
         pitchSlider.setValue(0.0);
         overviewWaveform.updateWaveform();
 
@@ -1078,9 +1082,9 @@ void DeckComponent::resized()
     headerArea.removeFromLeft(52);
 
     // Right metadata block (Time, Key, BPM)
-    auto rightMeta = headerArea.removeFromRight(150);
+    auto rightMeta = headerArea.removeFromRight(186);
     bpmLabel.setBounds(rightMeta.removeFromRight(46));
-    keyBadge.setBounds(rightMeta.removeFromRight(30).reduced(0, 10));
+    keyBadge.setBounds(rightMeta.removeFromRight(68).reduced(2, 9));
     timeRemainingLabel.setBounds(rightMeta);
 
     // Title and Artist fill the middle header space

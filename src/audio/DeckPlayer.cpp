@@ -50,6 +50,7 @@ bool DeckPlayer::loadFile(const juce::File& audioFile)
     trackTitle = reader->metadataValues.getValue("title", audioFile.getFileNameWithoutExtension());
     trackArtist = reader->metadataValues.getValue("artist", "Artista Local");
     trackKey = "--";
+    trackCamelot = "--";
 
     double duration = (double)reader->lengthInSamples / reader->sampleRate;
     trackDurationSeconds.store(duration);
@@ -60,8 +61,10 @@ bool DeckPlayer::loadFile(const juce::File& audioFile)
     originalBpm.store(beatRes.bpm);
     currentBpm.store(beatRes.bpm);
 
-    // Native C++ key detection (Camelot)
-    trackKey = KeyDetector::analyze(reader).camelot;
+    // Native C++ Pro Harmonic Key Detection (Camelot + Musical key)
+    auto keyRes = KeyDetector::analyze(reader);
+    trackKey = (keyRes.formattedKey.isNotEmpty() && keyRes.formattedKey != "--") ? keyRes.formattedKey : keyRes.camelot;
+    trackCamelot = keyRes.camelot;
 
     // Extract 3-band waveform overview peaks
     extractWaveformOverview(reader);
@@ -528,6 +531,18 @@ juce::String DeckPlayer::getTrackKey() const
 {
     const juce::ScopedLock sl(lock);
     return trackKey;
+}
+
+juce::String DeckPlayer::getTrackCamelot() const
+{
+    const juce::ScopedLock sl(lock);
+    return trackCamelot;
+}
+
+juce::Colour DeckPlayer::getTrackKeyColour() const
+{
+    const juce::ScopedLock sl(lock);
+    return KeyDetector::getCamelotColour(trackKey);
 }
 
 void DeckPlayer::extractWaveformOverview(juce::AudioFormatReader* reader)
