@@ -38,22 +38,29 @@ public:
 
     void refreshDrives();
     void selectDrive(int index);
-    const std::vector<TrackItem>& getAllTracks() const { return allUsbTracks; }    void selectFolder(const juce::String& folderName);
+    const std::vector<TrackItem>& getAllTracks() const { return allUsbTracks; }
+    void selectFolder(const juce::String& folderName);
     void openManualFolder();
 
 private:
-    void scanDriveFiles(const juce::File& rootDir);
     void filterTracks(const juce::String& query);
+    void updateSyncStatusLabel(int count, bool isScanning, const juce::String& currentFolder = {});
 
     juce::AudioFormatManager& formatManager;
+    std::unique_ptr<class AsyncFolderScanner> asyncScanner;
 
     std::vector<UsbDrive> drives;
     int selectedDriveIndex { -1 };
     juce::String selectedFolderName { "Todas las pistas" };
     std::vector<juce::String> availableFolders;
+    std::set<juce::String> discoveredFolderSet;
+    std::unordered_set<juce::String> knownUsbPaths;
 
     std::vector<TrackItem> allUsbTracks;
     std::vector<TrackItem> filteredUsbTracks;
+
+    bool isSyncing { false };
+    juce::String currentlyScannedDriveId;
 
     // Left Sidebar controls
     juce::Label sidebarTitle;

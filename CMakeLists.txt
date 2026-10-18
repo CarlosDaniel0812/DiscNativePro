@@ -89,6 +89,10 @@ target_sources(DiscNativePro
         src/services/UpdateService.cpp
         src/services/UsbDriveScanner.h
         src/services/UsbDriveScanner.cpp
+        src/services/LibraryCacheManager.h
+        src/services/LibraryCacheManager.cpp
+        src/services/AsyncFolderScanner.h
+        src/services/AsyncFolderScanner.cpp
         src/services/SoundCloudService.h
         src/services/SoundCloudService.cpp
         src/ui/TopBarComponent.h

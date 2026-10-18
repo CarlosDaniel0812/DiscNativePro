@@ -28,6 +28,7 @@ struct TrackItem
 class LibraryComponent : public juce::Component,
                          public juce::TableListBoxModel,
                          public juce::DragAndDropTarget,
+                         public juce::Timer,
                          public LanguageManager::Listener
 {
 public:
@@ -36,6 +37,7 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    void timerCallback() override;
     void languageChanged() override;
     void refreshLanguage();
 
@@ -161,6 +163,12 @@ private:
 
     class BackgroundBpmScanner;
     std::unique_ptr<BackgroundBpmScanner> bpmScanner;
+
+    std::unique_ptr<class AsyncFolderScanner> folderScanner;
+    std::unordered_set<juce::String> knownTrackPaths;
+    bool isFolderSyncing { false };
+    bool tableNeedsRepaint { false };
+    void updateSyncStatus(int count, bool isScanning, const juce::String& currentFolder = {});
 
     // Hardware browsing state
     bool isBrowsingFolders { false };

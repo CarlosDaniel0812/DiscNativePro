@@ -5,6 +5,8 @@
 #include "SoundCloudLibraryView.h"
 #include "../services/YouTubeService.h"
 #include "../services/YouTubeAudioDownloader.h"
+#include "../services/AsyncFolderScanner.h"
+#include "../services/LibraryCacheManager.h"
 #include "../audio/SampleTrackGenerator.h"
 #include "../audio/BeatDetector.h"
 #include "../audio/KeyDetector.h"
@@ -612,6 +614,8 @@ public:
                     if (callback && !threadShouldExit())
                     {
                         double detectedBpm = (beatRes.bpm >= 40.0 && beatRes.bpm <= 250.0) ? beatRes.bpm : 0.0;
+                        LibraryCacheManager::getInstance().updateBpmAndKey(nextFile, detectedBpm, detectedKey);
+
                         juce::MessageManager::callAsync([cb = callback, f = nextFile, bpm = detectedBpm, key = detectedKey]() {
                             cb(f, bpm, key);
                         });
@@ -619,7 +623,7 @@ public:
                 }
             }
 
-            wait(20);
+            wait(40);
         }
     }
 
@@ -636,6 +640,42 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     bpmScanner = std::make_unique<BackgroundBpmScanner>(formatManager, [this](const juce::File& file, double bpm, const juce::String& key) {
         updateTrackBpmAndKey(file, bpm, key);
     });
+
+    folderScanner = std::make_unique<AsyncFolderScanner>(formatManager);
+    folderScanner->onTracksDiscovered = [this](const std::vector<TrackItem>& batch, uint64_t /*scanId*/) {
+        for (auto item : batch)
+        {
+            auto path = item.file.getFullPathName();
+            if (knownTrackPaths.find(path) == knownTrackPaths.end())
+            {
+                knownTrackPaths.insert(path);
+                item.id = juce::String(allTracks.size() + 1);
+                allTracks.push_back(item);
+
+                if ((item.bpm <= 0.0 || item.key == "--" || item.key.isEmpty()) && !item.isDemo)
+                {
+                    if (bpmScanner != nullptr)
+                        bpmScanner->queueTrack(item.file);
+                }
+            }
+        }
+        applySorting();
+        filterTracks(searchBox.getText());
+        folderTree.updateTree(allTracks);
+        updateSyncStatus((int)filteredTracks.size(), true);
+    };
+
+    folderScanner->onProgress = [this](int totalFound, const juce::String& currentFolderName, uint64_t /*scanId*/) {
+        updateSyncStatus(totalFound, true, currentFolderName);
+    };
+
+    folderScanner->onScanFinished = [this](int /*totalFound*/, uint64_t /*scanId*/) {
+        isFolderSyncing = false;
+        applySorting();
+        filterTracks(searchBox.getText());
+        folderTree.updateTree(allTracks);
+        updateSyncStatus((int)filteredTracks.size(), false);
+    };
 
     // 1. Far-Left Vertical Icon Rail
     auto setupRailIcon = [this](DjButton& btn, LucideIcons::IconType iconType, juce::Colour col, bool active) {
@@ -859,6 +899,10 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
 
 LibraryComponent::~LibraryComponent()
 {
+    stopTimer();
+    if (folderScanner != nullptr)
+        folderScanner->cancelScan();
+
     if (bpmScanner != nullptr)
     {
         bpmScanner->clearQueue();
@@ -868,6 +912,46 @@ LibraryComponent::~LibraryComponent()
         bpmScanner.reset();
     }
     LanguageManager::getInstance().removeListener(this);
+}
+
+void LibraryComponent::timerCallback()
+{
+    if (tableNeedsRepaint)
+    {
+        tableNeedsRepaint = false;
+        table.updateContent();
+        table.repaint();
+        if (automixQueueView != nullptr)
+            automixQueueView->updateContent();
+    }
+    else
+    {
+        stopTimer();
+    }
+}
+
+void LibraryComponent::updateSyncStatus(int count, bool isScanning, const juce::String& currentFolder)
+{
+    isFolderSyncing = isScanning;
+    juce::String folderDisplay = currentSelectedFolder;
+    if (currentSelectedFolder == "Todas las Pistas")
+        folderDisplay = LanguageManager::trUtf8("Todas las Pistas", "All Tracks");
+    else if (currentSelectedFolder == "Descargas")
+        folderDisplay = LanguageManager::trUtf8("Descargas", "Downloads");
+
+    if (isScanning)
+    {
+        tableHeaderTitle.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
+        juce::String status = folderDisplay + "  " + LanguageManager::trUtf8("Sincronizando: ", "Syncing: ") + juce::String(count) + " " + LanguageManager::trUtf8("Canciones...", "Tracks...");
+        if (currentFolder.isNotEmpty())
+            status += " (" + currentFolder + ")";
+        tableHeaderTitle.setText(status, juce::dontSendNotification);
+    }
+    else
+    {
+        tableHeaderTitle.setColour(juce::Label::textColourId, juce::Colours::white);
+        tableHeaderTitle.setText(folderDisplay + "  " + juce::String(count) + " " + LanguageManager::trUtf8("Canciones", "Tracks"), juce::dontSendNotification);
+    }
 }
 
 void LibraryComponent::languageChanged()
@@ -959,32 +1043,19 @@ void LibraryComponent::importFolder()
 
 void LibraryComponent::scanFolderRecursive(const juce::File& folder)
 {
-    juce::Array<juce::File> files;
-    folder.findChildFiles(files, juce::File::findFiles, true, "*.wav;*.mp3;*.flac;*.aiff;*.aif;*.m4a;*.ogg;*.aac");
+    if (!folder.isDirectory())
+        return;
 
     auto rootName = folder.getFileName();
-    auto rootPath = folder.getFullPathName();
+    currentSelectedFolder = rootName;
+    folderTree.expandFolder(rootName);
+    folderTree.setSelectedFolder(currentSelectedFolder);
 
-    for (const auto& f : files)
+    if (folderScanner != nullptr)
     {
-        auto parentDir = f.getParentDirectory();
-        juce::String folderTag = rootName;
-
-        if (parentDir != folder)
-        {
-            auto relDirPath = parentDir.getRelativePathFrom(folder);
-            juce::String cleanRel = relDirPath.replaceCharacter('\\', '/');
-            juce::StringArray subParts;
-            subParts.addTokens(cleanRel, "/", "\"");
-            subParts.removeEmptyStrings();
-
-            if (!subParts.isEmpty())
-            {
-                folderTag = rootName + " / " + subParts.joinIntoString(" / ");
-            }
-        }
-
-        addTrack(f, folderTag, rootPath, false);
+        isFolderSyncing = true;
+        updateSyncStatus((int)filteredTracks.size(), true);
+        folderScanner->startScan(folder, rootName);
     }
 }
 
@@ -1005,11 +1076,11 @@ void LibraryComponent::scanDownloadsFolder()
 
 void LibraryComponent::addTrack(const juce::File& file, const juce::String& folderTag, const juce::String& rootFolder, bool isDemo)
 {
-    // Check if already in library
-    for (const auto& t : allTracks)
-    {
-        if (t.file == file) return;
-    }
+    // Fast O(1) duplicate check
+    auto path = file.getFullPathName();
+    if (knownTrackPaths.find(path) != knownTrackPaths.end())
+        return;
+    knownTrackPaths.insert(path);
 
     TrackItem item;
     item.file = file;
@@ -1017,6 +1088,23 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
     item.rootFolderPath = rootFolder;
     item.isDemo = isDemo;
     item.id = juce::String(allTracks.size() + 1);
+
+    // Check persistent cache first
+    CachedTrackMetadata cachedMeta;
+    if (!isDemo && LibraryCacheManager::getInstance().getTrack(file, cachedMeta))
+    {
+        item.title = cachedMeta.title;
+        item.artist = cachedMeta.artist;
+        item.album = cachedMeta.album;
+        item.duration = cachedMeta.duration;
+        item.bpm = cachedMeta.bpm;
+        item.key = cachedMeta.key;
+        allTracks.push_back(item);
+
+        if ((item.bpm <= 0.0 || item.key == "--" || item.key.isEmpty()) && bpmScanner != nullptr)
+            bpmScanner->queueTrack(file);
+        return;
+    }
 
     // Try reading audio metadata and detect BPM
     bool bpmFound = false;
@@ -2103,6 +2191,8 @@ void LibraryComponent::updateTrackBpmAndKey(const juce::File& file, double bpm, 
     if (bpm <= 0.0 && (key.isEmpty() || key == "--"))
         return;
 
+    LibraryCacheManager::getInstance().updateBpmAndKey(file, bpm, key);
+
     bool updated = false;
     for (auto& t : allTracks)
     {
@@ -2139,11 +2229,9 @@ void LibraryComponent::updateTrackBpmAndKey(const juce::File& file, double bpm, 
 
     if (updated)
     {
-        table.updateContent();
-        table.repaint();
-        if (automixQueueView != nullptr)
-            automixQueueView->updateContent();
-        repaint();
+        tableNeedsRepaint = true;
+        if (!isTimerRunning())
+            startTimer(500);
     }
 }
 

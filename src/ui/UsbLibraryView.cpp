@@ -1,4 +1,5 @@
 #include "UsbLibraryView.h"
+#include "../services/AsyncFolderScanner.h"
 #include <algorithm>
 #include <set>
 
@@ -139,6 +140,37 @@ UsbLibraryView::UsbLibraryView(juce::AudioFormatManager& fm)
 
     LanguageManager::getInstance().addListener(this);
 
+    // Asynchronous scanner initialization
+    asyncScanner = std::make_unique<AsyncFolderScanner>(formatManager);
+    asyncScanner->onTracksDiscovered = [this](const std::vector<TrackItem>& batch, uint64_t /*scanId*/) {
+        for (const auto& item : batch)
+        {
+            auto path = item.file.getFullPathName();
+            if (knownUsbPaths.find(path) == knownUsbPaths.end())
+            {
+                knownUsbPaths.insert(path);
+                allUsbTracks.push_back(item);
+                if (discoveredFolderSet.insert(item.folder).second)
+                {
+                    availableFolders.push_back(item.folder);
+                }
+            }
+        }
+        filterTracks(searchBox.getText());
+        updateSyncStatusLabel((int)filteredUsbTracks.size(), true);
+    };
+
+    asyncScanner->onProgress = [this](int totalFound, const juce::String& currentFolderName, uint64_t /*scanId*/) {
+        updateSyncStatusLabel(totalFound, true, currentFolderName);
+    };
+
+    asyncScanner->onScanFinished = [this](int totalFound, uint64_t /*scanId*/) {
+        isSyncing = false;
+        filterTracks(searchBox.getText());
+        updateSyncStatusLabel((int)filteredUsbTracks.size(), false);
+        refreshDrives();
+    };
+
     // Initial drive scan & periodic timer
     refreshDrives();
     startTimer(3000);
@@ -147,6 +179,8 @@ UsbLibraryView::UsbLibraryView(juce::AudioFormatManager& fm)
 UsbLibraryView::~UsbLibraryView()
 {
     stopTimer();
+    if (asyncScanner)
+        asyncScanner->cancelScan();
     LanguageManager::getInstance().removeListener(this);
 }
 
@@ -319,15 +353,56 @@ void UsbLibraryView::refreshDrives()
     repaint();
 }
 
+void UsbLibraryView::updateSyncStatusLabel(int count, bool isScanningNow, const juce::String& currentFolder)
+{
+    isSyncing = isScanningNow;
+    if (isScanningNow)
+    {
+        trackCountLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(0, 229, 255));
+        juce::String text = LanguageManager::trUtf8("Sincronizando: ", "Syncing: ") + juce::String(count) + " " + LanguageManager::trUtf8("pistas...", "tracks...");
+        if (currentFolder.isNotEmpty())
+            text += " (" + currentFolder + ")";
+        trackCountLabel.setText(text, juce::dontSendNotification);
+    }
+    else
+    {
+        trackCountLabel.setColour(juce::Label::textColourId, juce::Colour::fromRGB(140, 146, 160));
+        trackCountLabel.setText(juce::String(count) + " " + LanguageManager::trUtf8("pistas", "tracks"), juce::dontSendNotification);
+    }
+}
+
 void UsbLibraryView::selectDrive(int index)
 {
     if (index < 0 || index >= (int)drives.size())
         return;
 
+    const auto& drive = drives[static_cast<size_t>(index)];
+
+    // If already on this drive and tracks exist, avoid unnecessary rescans
+    if (selectedDriveIndex == index && currentlyScannedDriveId == drive.id && !allUsbTracks.empty())
+        return;
+
     selectedDriveIndex = index;
     selectedFolderName = "Todas las pistas";
+    currentlyScannedDriveId = drive.id;
 
-    scanDriveFiles(drives[static_cast<size_t>(index)].root);
+    if (asyncScanner)
+        asyncScanner->cancelScan();
+
+    allUsbTracks.clear();
+    filteredUsbTracks.clear();
+    knownUsbPaths.clear();
+    discoveredFolderSet.clear();
+    availableFolders.clear();
+
+    table.updateContent();
+    table.repaint();
+
+    updateSyncStatusLabel(0, true);
+
+    if (asyncScanner)
+        asyncScanner->startScan(drive.root);
+
     filterTracks(searchBox.getText());
     refreshDrives();
 }
@@ -365,86 +440,6 @@ void UsbLibraryView::openManualFolder()
             selectDrive((int)drives.size() - 1);
         }
     });
-}
-
-void UsbLibraryView::scanDriveFiles(const juce::File& rootDir)
-{
-    allUsbTracks.clear();
-    availableFolders.clear();
-
-    if (!rootDir.isDirectory())
-        return;
-
-    juce::Array<juce::File> files;
-    rootDir.findChildFiles(files, juce::File::findFiles, true);
-
-    std::set<juce::String> folderSet;
-
-    for (const auto& f : files)
-    {
-        if (!UsbDriveScanner::isValidAudioFile(f))
-            continue;
-
-        TrackItem item;
-        item.id = juce::String::toHexString(f.hashCode64());
-        item.file = f;
-
-        // Subfolder path relative to USB root
-        auto relPath = f.getParentDirectory().getRelativePathFrom(rootDir);
-        if (relPath.isEmpty() || relPath == ".")
-            item.folder = "Raíz";
-        else
-            item.folder = relPath.replaceCharacter('\\', '/');
-
-        folderSet.insert(item.folder);
-
-        // Parse artist / title from filename
-        auto baseName = f.getFileNameWithoutExtension();
-        if (baseName.contains(" - "))
-        {
-            item.artist = baseName.upToFirstOccurrenceOf(" - ", false, true).trim();
-            item.title  = baseName.fromFirstOccurrenceOf(" - ", false, true).trim();
-        }
-        else
-        {
-            item.title  = baseName.trim();
-            item.artist = LanguageManager::trUtf8("Artista Desconocido", "Unknown Artist");
-        }
-
-        item.album = rootDir.getFileName();
-        item.bpm = 124.0;
-        item.key = "8A";
-        item.duration = 0.0;
-
-        // Quick metadata header peek
-        std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
-        if (reader != nullptr)
-        {
-            if (reader->sampleRate > 0)
-                item.duration = (double)reader->lengthInSamples / reader->sampleRate;
-
-            auto metaTitle = reader->metadataValues["title"].trim();
-            if (metaTitle.isNotEmpty())
-                item.title = metaTitle;
-
-            auto metaArtist = reader->metadataValues["artist"].trim();
-            if (metaArtist.isNotEmpty())
-                item.artist = metaArtist;
-
-            auto metaBpm = reader->metadataValues["bpm"].getDoubleValue();
-            if (metaBpm > 40.0 && metaBpm < 220.0)
-                item.bpm = metaBpm;
-
-            auto metaKey = reader->metadataValues["initialkey"].trim();
-            if (metaKey.isNotEmpty())
-                item.key = metaKey;
-        }
-
-        allUsbTracks.push_back(std::move(item));
-    }
-
-    for (const auto& fs : folderSet)
-        availableFolders.push_back(fs);
 }
 
 void UsbLibraryView::filterTracks(const juce::String& query)
@@ -700,7 +695,7 @@ void UsbLibraryView::resized()
     else
     {
         auto topRow = mainArea.removeFromTop(38).reduced(8, 5);
-        trackCountLabel.setBounds(topRow.removeFromRight(100));
+        trackCountLabel.setBounds(topRow.removeFromRight(240));
         topRow.removeFromRight(8);
         searchBox.setBounds(topRow.removeFromRight(180));
         topRow.removeFromRight(12);
