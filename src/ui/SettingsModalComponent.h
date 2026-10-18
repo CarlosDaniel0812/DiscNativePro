@@ -10,6 +10,7 @@
 #include "../services/UpdateService.h"
 #include "LucideIcons.h"
 #include "DjButton.h"
+#include "MidiMappingTableComponent.h"
 
 class SettingsModalComponent : public juce::Component,
                                public LanguageManager::Listener,
@@ -142,6 +143,8 @@ private:
     juce::StringArray midiConnectedDevices;
     juce::Label midiMonitorHeader;
     juce::Label midiMonitorText;
+    juce::Label midiMappingHeader;
+    std::unique_ptr<MidiMappingTableComponent> midiMappingTable;
 
     // --- Tab 4: Shortcuts Controls ---
     // (Rendered directly in paint/custom cards)

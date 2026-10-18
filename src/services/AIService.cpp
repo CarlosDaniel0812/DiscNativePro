@@ -266,6 +266,7 @@ juce::String AIService::buildPrompt(const CurrentTrackContext& context)
         prompt << juce::String::fromUTF8("Criterios de selección y orden:\n");
         prompt << juce::String::fromUTF8("1. Mismo artista o mismo estilo/género/carpeta.\n");
         prompt << juce::String::fromUTF8("2. Tempo (BPM) compatible y transición armónica (Camelot: mismo tono, relativo o +/-1).\n");
+        prompt << juce::String::fromUTF8("   REGLA DE HALF-TIME / DOUBLE-TIME: Considera plenamente compatibles los tempos a mitad o doble (ej. 70-75 BPM de Trap/Dubstep/Reggaeton equivale y mezcla perfecto con 140-150 BPM). En un set con energía ascendente, ubica los temas de half-time en su tempo efectivo doble (~140-150 BPM) según su impacto y drop, NUNCA los envíes al inicio de la sesión como si fueran canciones lentas.\n");
         prompt << juce::String::fromUTF8("3. Mantén o sube la energía de la sesión para el público.\n");
         prompt << juce::String::fromUTF8("En el JSON de respuesta, pon en 'title' y 'artist' EXACTAMENTE los mismos nombres que aparecen en la lista numerada de arriba.\n");
         prompt << juce::String::fromUTF8("PROHIBIDO recomendar canciones que no estén en la lista de disponibles.\n");
@@ -300,7 +301,7 @@ juce::String AIService::buildPrompt(const CurrentTrackContext& context)
         prompt << juce::String::fromUTF8("Paso 2: recomienda exactamente 10 canciones que el público y los DJs ponen JUNTO a esta canción ")
                << "(co-ocurrencia real en sets y sesiones, no canciones vagamente parecidas). "
                << juce::String::fromUTF8("Prioriza las de la lista de audiencia de arriba cuando encajen en género y energía.\n");
-        prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado) y energía continua (escala 1-10).\n");
+        prompt << juce::String::fromUTF8("Paso 3: filtra por compatibilidad de mezcla: tempo cercano (+/- 4 BPM del detectado o relación armónica Half/Double-Time) y energía continua (escala 1-10).\n");
         prompt << juce::String::fromUTF8("Si NO reconoces la pista (título genérico, artista desconocido o es muy nueva), pon \"known\": false en TODAS ")
                << juce::String::fromUTF8("y recomienda por género y energía en vez de inventar afinidades.\n");
     }

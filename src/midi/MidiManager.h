@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include <juce_events/juce_events.h>
 #include "../audio/AudioEngine.h"
+#include "MidiMapping.h"
 #include <functional>
 
 class MidiManager : public juce::MidiInputCallback,
@@ -22,6 +23,9 @@ public:
     juce::StringArray getConnectedDeviceNames() const;
     void sendMidiMessage(const juce::MidiMessage& message);
 
+    MidiMappingManager& getMappingManager() { return mappingManager; }
+    const MidiMappingManager& getMappingManager() const { return mappingManager; }
+
     std::function<void(const juce::String& description)> onMidiActivity;
     std::function<void()> onDevicesChanged;
     std::function<void(int delta)> onBrowseRotate;
@@ -32,6 +36,8 @@ public:
 
 private:
     AudioEngine& engine;
+    MidiMappingManager mappingManager;
+    bool dispatchMappedAction(const MidiActionDefinition& def, const juce::MidiMessage& message);
     bool deviceConnected { false };
     juce::StringArray connectedDevices;
     std::unique_ptr<juce::MidiOutput> midiOutput;

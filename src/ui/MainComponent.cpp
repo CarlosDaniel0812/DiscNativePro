@@ -541,16 +541,20 @@ int scoreTrackCandidate(const TrackItem& candidate,
             score += 35;
     }
 
-    // 3. BPM proximity
+    // 3. BPM proximity with Half-Time / Double-Time modular compatibility
     if (currentBpm > 20.0 && candidate.bpm > 20.0)
     {
-        double diff = std::abs(candidate.bpm - currentBpm) / currentBpm;
-        if (diff <= 0.04)
+        double diffDirect = std::abs(candidate.bpm - currentBpm) / currentBpm;
+        double diffDouble = std::abs(candidate.bpm - (currentBpm * 2.0)) / (currentBpm * 2.0);
+        double diffHalf   = std::abs((candidate.bpm * 2.0) - currentBpm) / currentBpm;
+        double minDiff    = std::min({ diffDirect, diffDouble, diffHalf });
+
+        if (minDiff <= 0.04)
             score += 25;
-        else if (diff <= 0.08)
-            score += 15;
-        else if (diff <= 0.15)
-            score += 5;
+        else if (minDiff <= 0.08)
+            score += 18;
+        else if (minDiff <= 0.15)
+            score += 8;
     }
 
     // 4. Harmonic Key (Camelot)

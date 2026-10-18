@@ -518,6 +518,9 @@ void SettingsModalComponent::refreshLanguage()
     midiScanBtn.setButtonText(LanguageManager::trUtf8("Escanear Puertos", "Scan Ports"));
     midiMonitorHeader.setText(LanguageManager::trUtf8("MONITOR DE SEÑALES MIDI EN VIVO", "LIVE MIDI SIGNAL MONITOR"), juce::dontSendNotification);
     midiMonitorText.setText(LanguageManager::trUtf8("Esperando movimiento de fader, jog o pad...", "Waiting for fader, jog or pad movement..."), juce::dontSendNotification);
+    midiMappingHeader.setText(LanguageManager::trUtf8("MAPEO PERSONALIZADO (MIDI LEARN)", "CUSTOM MAPPING (MIDI LEARN)"), juce::dontSendNotification);
+    if (midiMappingTable != nullptr)
+        midiMappingTable->refreshLanguage();
 
     // Tab 5: Streaming
     streamingSectionTitle.setText(LanguageManager::trUtf8("Integración de YouTube Streaming", "YouTube Streaming Integration"), juce::dontSendNotification);
@@ -773,6 +776,14 @@ void SettingsModalComponent::setupMidiTab()
     midi.onMidiActivity = [this](const juce::String& desc) {
         midiMonitorText.setText(desc, juce::dontSendNotification);
     };
+
+    midiMappingHeader.setText(juce::String::fromUTF8("MAPEO PERSONALIZADO (MIDI LEARN)"), juce::dontSendNotification);
+    midiMappingHeader.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    midiMappingHeader.setColour(juce::Label::textColourId, juce::Colour::fromRGB(46, 196, 182));
+    bodyContent.addChildComponent(midiMappingHeader);
+
+    midiMappingTable = std::make_unique<MidiMappingTableComponent>(midi);
+    bodyContent.addChildComponent(*midiMappingTable);
 
     refreshMidiDevices();
 }
@@ -1408,6 +1419,9 @@ void SettingsModalComponent::updateTabVisibility()
     midiScanBtn.setVisible(isMidi);
     midiMonitorHeader.setVisible(isMidi);
     midiMonitorText.setVisible(isMidi);
+    midiMappingHeader.setVisible(isMidi);
+    if (midiMappingTable != nullptr)
+        midiMappingTable->setVisible(isMidi);
 
     // Streaming components (Tab 5)
     bool isStreaming = (activeTab == 5);
@@ -1956,12 +1970,18 @@ void SettingsModalComponent::resized()
         midiScanBtn.setBounds(devHeaderRow.removeFromRight(130));
 
         mArea.removeFromTop(8);
-        midiDeviceListBox = mArea.removeFromTop(130);
-        mArea.removeFromTop(14);
+        midiDeviceListBox = mArea.removeFromTop(110);
+        mArea.removeFromTop(12);
 
         midiMonitorHeader.setBounds(mArea.removeFromTop(18));
         mArea.removeFromTop(2);
-        midiMonitorText.setBounds(mArea.removeFromTop(26));
+        midiMonitorText.setBounds(mArea.removeFromTop(24));
+        mArea.removeFromTop(16);
+
+        midiMappingHeader.setBounds(mArea.removeFromTop(20));
+        mArea.removeFromTop(8);
+        if (midiMappingTable != nullptr)
+            midiMappingTable->setBounds(mArea.removeFromTop(380));
     }
 
     // --- Tab 5: Streaming Layout (Unconditionally set bounds) ---
