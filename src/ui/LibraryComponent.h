@@ -82,6 +82,7 @@ public:
     std::vector<TrackItem> allLocalTrackItems() const;
     void updateTrackBpm(const juce::File& file, double bpm);
     void updateTrackKey(const juce::File& file, const juce::String& key);
+    void updateTrackBpmAndKey(const juce::File& file, double bpm, const juce::String& key);
 
     // MIDI / Hardware Browser Navigation
     void navigateBrowser(int delta);

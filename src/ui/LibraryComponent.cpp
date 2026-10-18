@@ -7,6 +7,7 @@
 #include "../services/YouTubeAudioDownloader.h"
 #include "../audio/SampleTrackGenerator.h"
 #include "../audio/BeatDetector.h"
+#include "../audio/KeyDetector.h"
 #include "CoverArtGenerator.h"
 #include <cstdio>
 
@@ -545,8 +546,8 @@ private:
 class LibraryComponent::BackgroundBpmScanner : public juce::Thread
 {
 public:
-    BackgroundBpmScanner(juce::AudioFormatManager& fm, std::function<void(const juce::File&, double)> onBpmReady)
-        : juce::Thread("BpmBackgroundScanner"), formatManager(fm), callback(std::move(onBpmReady))
+    BackgroundBpmScanner(juce::AudioFormatManager& fm, std::function<void(const juce::File&, double, const juce::String&)> onAnalysisReady)
+        : juce::Thread("AudioBackgroundScanner"), formatManager(fm), callback(std::move(onAnalysisReady))
     {
     }
 
@@ -599,11 +600,20 @@ public:
                 if (reader != nullptr && !threadShouldExit())
                 {
                     auto beatRes = BeatDetector::analyze(reader.get());
-                    if (beatRes.bpm >= 40.0 && beatRes.bpm <= 250.0 && callback && !threadShouldExit())
+                    juce::String detectedKey;
+                    if (!threadShouldExit())
                     {
-                        double detectedBpm = beatRes.bpm;
-                        juce::MessageManager::callAsync([cb = callback, f = nextFile, bpm = detectedBpm]() {
-                            cb(f, bpm);
+                        auto keyRes = KeyDetector::analyze(reader.get(), 45.0);
+                        detectedKey = (keyRes.formattedKey.isNotEmpty() && keyRes.formattedKey != "--")
+                                      ? keyRes.formattedKey
+                                      : keyRes.camelot;
+                    }
+
+                    if (callback && !threadShouldExit())
+                    {
+                        double detectedBpm = (beatRes.bpm >= 40.0 && beatRes.bpm <= 250.0) ? beatRes.bpm : 0.0;
+                        juce::MessageManager::callAsync([cb = callback, f = nextFile, bpm = detectedBpm, key = detectedKey]() {
+                            cb(f, bpm, key);
                         });
                     }
                 }
@@ -615,7 +625,7 @@ public:
 
 private:
     juce::AudioFormatManager& formatManager;
-    std::function<void(const juce::File&, double)> callback;
+    std::function<void(const juce::File&, double, const juce::String&)> callback;
     juce::CriticalSection queueLock;
     std::vector<juce::File> pendingFiles;
 };
@@ -623,8 +633,8 @@ private:
 LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     : formatManager(fm)
 {
-    bpmScanner = std::make_unique<BackgroundBpmScanner>(formatManager, [this](const juce::File& file, double bpm) {
-        updateTrackBpm(file, bpm);
+    bpmScanner = std::make_unique<BackgroundBpmScanner>(formatManager, [this](const juce::File& file, double bpm, const juce::String& key) {
+        updateTrackBpmAndKey(file, bpm, key);
     });
 
     // 1. Far-Left Vertical Icon Rail
@@ -740,7 +750,7 @@ LibraryComponent::LibraryComponent(juce::AudioFormatManager& fm)
     table.getHeader().addColumn(juce::String::fromUTF8("ÁLBUM"), 5, 130, 80, 250);
     table.getHeader().addColumn(juce::String::fromUTF8("DURACIÓN"), 6, 68, 52, 90);
     table.getHeader().addColumn("BPM", 7, 62, 50, 80);
-    table.getHeader().addColumn("KEY", 8, 52, 42, 70);
+    table.getHeader().addColumn("KEY", 8, 76, 60, 100);
     table.getHeader().addColumn("CARGAR", 9, 74, 68, 85, juce::TableHeaderComponent::notSortable);
     table.getHeader().setColour(juce::TableHeaderComponent::backgroundColourId, juce::Colour::fromRGB(16, 18, 24));
     table.getHeader().setColour(juce::TableHeaderComponent::textColourId, juce::Colour::fromRGB(142, 149, 165));
@@ -1051,16 +1061,24 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         }
 
         // 2. Try reading Key from metadata
+        bool keyFound = false;
         auto keyStr = reader->metadataValues.getValue("initialkey", "");
         if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("TKEY", "");
         if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
         if (keyStr.isNotEmpty())
         {
-            item.key = keyStr;
+            auto formatted = KeyDetector::formatKeyString(keyStr);
+            if (formatted.isNotEmpty() && formatted != "--")
+            {
+                item.key = formatted;
+                keyFound = true;
+            }
         }
+        if (!keyFound)
+            item.key = "--";
 
-        // 3. If BPM not in metadata, queue for asynchronous background analysis (zero UI freeze)
-        if (!bpmFound && !isDemo)
+        // 3. If BPM or Key not in metadata, queue for asynchronous background analysis (zero UI freeze)
+        if ((!bpmFound || !keyFound) && !isDemo)
         {
             if (bpmScanner != nullptr)
                 bpmScanner->queueTrack(file);
@@ -1082,27 +1100,34 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         }
         item.album = "Local Audio";
         item.duration = 0.0;
+        item.key = "--";
     }
 
-    if (!bpmFound)
+    if (isDemo && !bpmFound)
     {
         if (item.title.containsIgnoreCase("Latin") || item.title.containsIgnoreCase("Groove"))
         {
             item.bpm = 124.0;
-            item.key = "8A";
+            item.key = "8A / Am";
             item.album = "Club Sessions Vol. 1";
         }
         else if (item.title.containsIgnoreCase("Sunset") || item.title.containsIgnoreCase("Beach"))
         {
             item.bpm = 126.0;
-            item.key = "11A";
+            item.key = "11A / F#m";
             item.album = "Ibiza Opening 2026";
         }
         else
         {
             item.bpm = 124.0;
-            item.key = "8A";
+            item.key = "8A / Am";
         }
+    }
+    else if (!bpmFound)
+    {
+        item.bpm = 0.0;
+        if (item.key.isEmpty())
+            item.key = "--";
     }
 
     allTracks.push_back(item);
@@ -1410,20 +1435,22 @@ void LibraryComponent::paintCell(juce::Graphics& g, int rowNumber, int columnId,
         case 7: // BPM
             g.setColour(juce::Colours::white);
             g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
-            g.drawText(juce::String(track.bpm, 1), cellBounds, juce::Justification::centred, false);
+            g.drawText(track.bpm > 0.0 ? juce::String(track.bpm, 1) : "--", cellBounds, juce::Justification::centred, false);
             break;
 
         case 8: // Key
         {
-            auto pill = cellBounds.reduced(4, 7).toFloat();
-            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.15f));
-            g.fillRoundedRectangle(pill, 3.0f);
-            g.setColour(juce::Colour::fromRGB(0, 180, 216).withAlpha(0.35f));
-            g.drawRoundedRectangle(pill, 3.0f, 1.0f);
+            auto pill = cellBounds.reduced(3, 6).toFloat();
+            auto keyCol = KeyDetector::getCamelotColour(track.key);
+            g.setColour(keyCol.withAlpha(0.16f));
+            g.fillRoundedRectangle(pill, 4.0f);
+            g.setColour(keyCol.withAlpha(0.40f));
+            g.drawRoundedRectangle(pill, 4.0f, 1.0f);
 
-            g.setColour(juce::Colour::fromRGB(0, 229, 255));
+            g.setColour(keyCol.brighter(0.25f));
             g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
-            g.drawText(track.key, pill, juce::Justification::centred, false);
+            juce::String dispKey = KeyDetector::formatKeyString(track.key);
+            g.drawText(dispKey, pill, juce::Justification::centred, false);
             break;
         }
 
@@ -1703,7 +1730,7 @@ void LibraryComponent::handleAutomixDropTracks(const juce::String& description)
                 ti.artist = "Artista Local";
                 ti.album = "Local Audio";
                 ti.bpm = 124.0;
-                ti.key = "8A";
+                ti.key = "8A / Am";
                 ti.duration = 180.0;
 
                 std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(f));
@@ -1736,7 +1763,7 @@ void LibraryComponent::handleAutomixDropTracks(const juce::String& description)
                     auto keyStr = reader->metadataValues.getValue("initialkey", "");
                     if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("TKEY", "");
                     if (keyStr.isEmpty()) keyStr = reader->metadataValues.getValue("key", "");
-                    if (keyStr.isNotEmpty()) ti.key = keyStr;
+                    if (keyStr.isNotEmpty()) ti.key = KeyDetector::formatKeyString(keyStr);
                 }
 
                 if (ti.duration <= 0.0 || ti.duration >= 60.0)
@@ -2005,9 +2032,9 @@ void LibraryComponent::loadSelectedTrack(int deckIndex)
     }
 }
 
-void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
+void LibraryComponent::updateTrackBpmAndKey(const juce::File& file, double bpm, const juce::String& key)
 {
-    if (bpm <= 0.0)
+    if (bpm <= 0.0 && (key.isEmpty() || key == "--"))
         return;
 
     bool updated = false;
@@ -2015,7 +2042,8 @@ void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
     {
         if (t.file == file)
         {
-            t.bpm = bpm;
+            if (bpm > 0.0) t.bpm = bpm;
+            if (key.isNotEmpty() && key != "--") t.key = key;
             updated = true;
             break;
         }
@@ -2025,7 +2053,8 @@ void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
     {
         if (t.file == file)
         {
-            t.bpm = bpm;
+            if (bpm > 0.0) t.bpm = bpm;
+            if (key.isNotEmpty() && key != "--") t.key = key;
             updated = true;
             break;
         }
@@ -2035,8 +2064,10 @@ void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
     {
         if (t.file == file)
         {
-            t.bpm = bpm;
+            if (bpm > 0.0) t.bpm = bpm;
+            if (key.isNotEmpty() && key != "--") t.key = key;
             updated = true;
+            break;
         }
     }
 
@@ -2044,51 +2075,23 @@ void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
     {
         table.updateContent();
         table.repaint();
+        if (automixQueueView != nullptr)
+            automixQueueView->updateContent();
         repaint();
     }
+}
+
+void LibraryComponent::updateTrackBpm(const juce::File& file, double bpm)
+{
+    if (bpm <= 0.0)
+        return;
+    updateTrackBpmAndKey(file, bpm, {});
 }
 
 void LibraryComponent::updateTrackKey(const juce::File& file, const juce::String& key)
 {
     if (key.isEmpty() || key == "--")
         return;
-
-    bool updated = false;
-    for (auto& t : allTracks)
-    {
-        if (t.file == file)
-        {
-            t.key = key;
-            updated = true;
-            break;
-        }
-    }
-
-    for (auto& t : filteredTracks)
-    {
-        if (t.file == file)
-        {
-            t.key = key;
-            updated = true;
-            break;
-        }
-    }
-
-    for (auto& t : automixQueue)
-    {
-        if (t.file == file)
-        {
-            t.key = key;
-            updated = true;
-            break;
-        }
-    }
-
-    if (updated)
-    {
-        table.updateContent();
-        table.repaint();
-        repaint();
-    }
+    updateTrackBpmAndKey(file, 0.0, key);
 }
 

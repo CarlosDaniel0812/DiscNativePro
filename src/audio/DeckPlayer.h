@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_graphics/juce_graphics.h>
 #include <juce_core/juce_core.h>
 #include <array>
 #include <atomic>
@@ -88,6 +89,8 @@ public:
     juce::String getTrackTitle() const;
     juce::String getTrackArtist() const;
     juce::String getTrackKey() const;
+    juce::String getTrackCamelot() const;
+    juce::Colour getTrackKeyColour() const;
     const juce::File& getCurrentFile() const { return currentFile; }
 
 private:
@@ -109,6 +112,7 @@ private:
     juce::String trackTitle;
     juce::String trackArtist;
     juce::String trackKey { "--" };
+    juce::String trackCamelot { "--" };
 
     std::atomic<bool> loaded { false };
     std::atomic<bool> playing { false };
