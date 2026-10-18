@@ -71,6 +71,8 @@ target_sources(DiscNativePro
         src/audio/SampleTrackGenerator.cpp
         src/midi/MidiManager.h
         src/midi/MidiManager.cpp
+        src/midi/MidiMapping.h
+        src/midi/MidiMapping.cpp
         src/services/YouTubeService.h
         src/services/YouTubeService.cpp
         src/services/YouTubeAudioDownloader.h
@@ -126,6 +128,8 @@ target_sources(DiscNativePro
         src/ui/FolderTreeComponent.cpp
         src/ui/MidiModalComponent.h
         src/ui/MidiModalComponent.cpp
+        src/ui/MidiMappingTableComponent.h
+        src/ui/MidiMappingTableComponent.cpp
         src/ui/SettingsModalComponent.h
         src/ui/SettingsModalComponent.cpp
         src/ui/FxSlotComponent.h

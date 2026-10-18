@@ -163,6 +163,311 @@ void MidiManager::handleJogWheel(int deckIndex, int cc, int val)
     }
 }
 
+bool MidiManager::dispatchMappedAction(const MidiActionDefinition& def, const juce::MidiMessage& message)
+{
+    float norm = 0.0f;
+    int val = 0;
+    if (message.isController())
+    {
+        val = message.getControllerValue();
+        norm = static_cast<float>(val) / 127.0f;
+    }
+    else if (message.isPitchWheel())
+    {
+        int pitchVal = message.getPitchWheelValue();
+        int delta = pitchVal - 8192;
+        if (std::abs(delta) > 32)
+        {
+            norm = (float)delta / 8192.0f;
+            norm = juce::jlimit(-1.0f, 1.0f, norm);
+        }
+    }
+
+    const auto& id = def.id;
+
+    // Transporte Deck 1
+    if (id == "deck1_play")
+    {
+        if (message.isNoteOn())
+        {
+            if (onPlayPause) juce::MessageManager::callAsync([this]() { if (onPlayPause) onPlayPause(0); });
+            else { auto& d = engine.getDeck(0); if (d.isPlaying()) d.pause(); else d.play(); }
+            return true;
+        }
+    }
+    else if (id == "deck1_cue")
+    {
+        if (message.isNoteOn())
+        {
+            if (onCue) juce::MessageManager::callAsync([this]() { if (onCue) onCue(0); });
+            else engine.getDeck(0).triggerCue();
+            return true;
+        }
+    }
+    else if (id == "deck1_sync")
+    {
+        if (message.isNoteOn())
+        {
+            auto& d1 = engine.getDeck(0);
+            auto& d2 = engine.getDeck(1);
+            if (d2.isLoaded() && d2.getBpm() > 0.0 && d1.getOriginalBpm() > 0.0)
+                d1.setPitchPercent((float)(((d2.getBpm() / d1.getOriginalBpm()) - 1.0) * 100.0));
+            return true;
+        }
+    }
+    else if (id == "deck1_range")
+    {
+        if (message.isNoteOn())
+        {
+            auto& d1 = engine.getDeck(0);
+            float cur = d1.getPitchRange();
+            d1.setPitchRange((cur < 12.0f) ? 16.0f : ((cur < 30.0f) ? 50.0f : 8.0f));
+            return true;
+        }
+    }
+    else if (id == "deck1_tempo")
+    {
+        auto& d1 = engine.getDeck(0);
+        if (message.isPitchWheel())
+        {
+            d1.setPitchPercent(norm * d1.getPitchRange());
+            return true;
+        }
+        else if (message.isController())
+        {
+            d1.setPitchPercent((norm * 2.0f - 1.0f) * d1.getPitchRange());
+            return true;
+        }
+    }
+    else if (id == "deck1_jog_ring")
+    {
+        if (message.isController())
+        {
+            handleJogWheel(0, 33, val);
+            return true;
+        }
+    }
+    else if (id == "deck1_jog_platter")
+    {
+        if (message.isController())
+        {
+            handleJogWheel(0, 34, val);
+            return true;
+        }
+    }
+
+    // Transporte Deck 2
+    else if (id == "deck2_play")
+    {
+        if (message.isNoteOn())
+        {
+            if (onPlayPause) juce::MessageManager::callAsync([this]() { if (onPlayPause) onPlayPause(1); });
+            else { auto& d = engine.getDeck(1); if (d.isPlaying()) d.pause(); else d.play(); }
+            return true;
+        }
+    }
+    else if (id == "deck2_cue")
+    {
+        if (message.isNoteOn())
+        {
+            if (onCue) juce::MessageManager::callAsync([this]() { if (onCue) onCue(1); });
+            else engine.getDeck(1).triggerCue();
+            return true;
+        }
+    }
+    else if (id == "deck2_sync")
+    {
+        if (message.isNoteOn())
+        {
+            auto& d1 = engine.getDeck(0);
+            auto& d2 = engine.getDeck(1);
+            if (d1.isLoaded() && d1.getBpm() > 0.0 && d2.getOriginalBpm() > 0.0)
+                d2.setPitchPercent((float)(((d1.getBpm() / d2.getOriginalBpm()) - 1.0) * 100.0));
+            return true;
+        }
+    }
+    else if (id == "deck2_range")
+    {
+        if (message.isNoteOn())
+        {
+            auto& d2 = engine.getDeck(1);
+            float cur = d2.getPitchRange();
+            d2.setPitchRange((cur < 12.0f) ? 16.0f : ((cur < 30.0f) ? 50.0f : 8.0f));
+            return true;
+        }
+    }
+    else if (id == "deck2_tempo")
+    {
+        auto& d2 = engine.getDeck(1);
+        if (message.isPitchWheel())
+        {
+            d2.setPitchPercent(norm * d2.getPitchRange());
+            return true;
+        }
+        else if (message.isController())
+        {
+            d2.setPitchPercent((norm * 2.0f - 1.0f) * d2.getPitchRange());
+            return true;
+        }
+    }
+    else if (id == "deck2_jog_ring")
+    {
+        if (message.isController())
+        {
+            handleJogWheel(1, 33, val);
+            return true;
+        }
+    }
+    else if (id == "deck2_jog_platter")
+    {
+        if (message.isController())
+        {
+            handleJogWheel(1, 34, val);
+            return true;
+        }
+    }
+
+    // Mezclador
+    else if (id == "mixer_fader_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).volumeFader.store(norm); return true; }
+    }
+    else if (id == "mixer_fader_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).volumeFader.store(norm); return true; }
+    }
+    else if (id == "mixer_crossfader")
+    {
+        if (message.isController()) { engine.setCrossfader((norm * 2.0f) - 1.0f); return true; }
+    }
+    else if (id == "mixer_master_vol")
+    {
+        if (message.isController()) { engine.getMixer().setMasterVolume(norm * 1.5f); return true; }
+    }
+    else if (id == "mixer_phones_vol")
+    {
+        if (message.isController()) { engine.getMixer().setPhonesVolume(norm * 1.5f); return true; }
+    }
+    else if (id == "mixer_cue_d1")
+    {
+        if (message.isNoteOn())
+        {
+            bool s = !engine.getMixer().getChannel(0).isCue();
+            engine.getMixer().getChannel(0).setCue(s);
+            sendMidiMessage(juce::MidiMessage::noteOn(message.getChannel(), message.getNoteNumber(), (juce::uint8)(s ? 127 : 0)));
+            return true;
+        }
+    }
+    else if (id == "mixer_cue_d2")
+    {
+        if (message.isNoteOn())
+        {
+            bool s = !engine.getMixer().getChannel(1).isCue();
+            engine.getMixer().getChannel(1).setCue(s);
+            sendMidiMessage(juce::MidiMessage::noteOn(message.getChannel(), message.getNoteNumber(), (juce::uint8)(s ? 127 : 0)));
+            return true;
+        }
+    }
+
+    // EQ y Filtros
+    else if (id == "eq_gain_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).gain.store(norm * 2.0f); return true; }
+    }
+    else if (id == "eq_high_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).eqHigh.store(norm); return true; }
+    }
+    else if (id == "eq_mid_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).eqMid.store(norm); return true; }
+    }
+    else if (id == "eq_low_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).eqLow.store(norm); return true; }
+    }
+    else if (id == "eq_filter_d1")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(0).filterKnob.store((norm * 2.0f) - 1.0f); return true; }
+    }
+    else if (id == "eq_gain_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).gain.store(norm * 2.0f); return true; }
+    }
+    else if (id == "eq_high_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).eqHigh.store(norm); return true; }
+    }
+    else if (id == "eq_mid_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).eqMid.store(norm); return true; }
+    }
+    else if (id == "eq_low_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).eqLow.store(norm); return true; }
+    }
+    else if (id == "eq_filter_d2")
+    {
+        if (message.isController()) { engine.getMixer().getChannel(1).filterKnob.store((norm * 2.0f) - 1.0f); return true; }
+    }
+
+    // Pads / Hot Cues
+    else if (id.startsWith("pad_hotcue"))
+    {
+        if (message.isNoteOn())
+        {
+            int padIdx = 0;
+            if (id.contains("hotcue1")) padIdx = 0;
+            else if (id.contains("hotcue2")) padIdx = 1;
+            else if (id.contains("hotcue3")) padIdx = 2;
+            else if (id.contains("hotcue4")) padIdx = 3;
+
+            int deck = id.endsWith("_d1") ? 0 : 1;
+            auto& d = engine.getDeck(deck);
+            if (d.hasHotCue(padIdx)) d.jumpToHotCue(padIdx);
+            else d.setHotCue(padIdx, d.getPosition());
+            return true;
+        }
+    }
+
+    // Navegación
+    else if (id == "browser_rotate")
+    {
+        if (message.isController())
+        {
+            int delta = (val < 64) ? val : (val - 128);
+            if (onBrowseRotate) juce::MessageManager::callAsync([this, delta]() { if (onBrowseRotate) onBrowseRotate(delta); });
+            return true;
+        }
+    }
+    else if (id == "browser_push")
+    {
+        if (message.isNoteOn())
+        {
+            if (onBrowseClick) juce::MessageManager::callAsync([this]() { if (onBrowseClick) onBrowseClick(); });
+            return true;
+        }
+    }
+    else if (id == "browser_load_d1")
+    {
+        if (message.isNoteOn())
+        {
+            if (onLoadTrack) juce::MessageManager::callAsync([this]() { if (onLoadTrack) onLoadTrack(0); });
+            return true;
+        }
+    }
+    else if (id == "browser_load_d2")
+    {
+        if (message.isNoteOn())
+        {
+            if (onLoadTrack) juce::MessageManager::callAsync([this]() { if (onLoadTrack) onLoadTrack(1); });
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void MidiManager::handleIncomingMidiMessage(juce::MidiInput* /*source*/, const juce::MidiMessage& message)
 {
     // Format message description for live UI monitor
@@ -203,6 +508,20 @@ void MidiManager::handleIncomingMidiMessage(juce::MidiInput* /*source*/, const j
             if (onMidiActivity)
                 onMidiActivity(actText);
         });
+    }
+
+    // 1. Process MIDI Learn if active
+    if (mappingManager.isLearning())
+    {
+        if (mappingManager.processLearningMessage(message))
+            return;
+    }
+
+    // 2. Process custom MIDI Mapping dispatch
+    if (auto* matched = mappingManager.matchMessage(message))
+    {
+        if (dispatchMappedAction(*matched, message))
+            return;
     }
 
     // 1. Pioneer DDJ-SB2 Tempo Faders (14-bit Pitch Bend Messages: 0xE0 on Ch 1, 0xE1 on Ch 2)
