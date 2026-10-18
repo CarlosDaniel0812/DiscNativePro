@@ -63,6 +63,7 @@ public:
     juce::String getVideoId() const { return loadedVideoId; }
     bool isLoaded() const { return deck.isLoaded() || isVideoMode; }
 
+    static juce::String sanitizeTrackString(const juce::String& text);
     static juce::String stripTrackNumberPrefix(const juce::String& filename);
     static bool splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle);
 

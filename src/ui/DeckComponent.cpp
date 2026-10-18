@@ -640,9 +640,87 @@ void DeckComponent::loadYouTubeVideo(const YouTubeSearchResult& result)
     );
 }
 
+juce::String DeckComponent::sanitizeTrackString(const juce::String& text)
+{
+    auto s = text.trim();
+
+    // 1. Prefijos comunes de convertidores y descargadores web
+    static const char* webPrefixes[] = {
+        "y2mate.is - ", "y2mate.com - ", "y2mate - ",
+        "yt1s.com - ", "yt1s - ",
+        "snaptube - ", "snaptube.com - ",
+        "ytmp3 - ", "ytmp3.cc - ",
+        "convert2mp3 - ",
+        "[MP3] ", "(MP3) ", "MP3 - ",
+        nullptr
+    };
+    for (int i = 0; webPrefixes[i] != nullptr; ++i)
+    {
+        if (s.startsWithIgnoreCase(webPrefixes[i]))
+        {
+            s = s.substring((int)strlen(webPrefixes[i])).trimStart();
+            i = -1; // re-check in case multiple prefixes exist
+        }
+    }
+
+    // 2. Coletillas y sufijos de calidad / ripeo
+    static const char* suffixes[] = {
+        " (Official Video)", " (Official Music Video)", " [Official Video]",
+        " (Official Audio)", " (Lyric Video)", " (Lyrics)", " [Lyrics]", " (Visualizer)",
+        " (Official HD Video)", " (Official Video HD)", " (HD)", " [Official Audio]",
+        " (Official Lyric Video)", " (Remastered)", " (Remaster)",
+        " (Live)", " (Official Live Video)",
+        " [320kbps]", " (320kbps)", " [320 kbps]", " (320 kbps)",
+        " [128kbps]", " (128kbps)", " [256kbps]",
+        " [HQ]", " (HQ)", " [FLAC]", " (FLAC)",
+        " (Audio Oficial)", " [Audio Oficial]", " (Video Oficial)", " [Video Oficial]",
+        " (Videoclip Oficial)", " [Videoclip Oficial]",
+        nullptr
+    };
+    for (int i = 0; suffixes[i] != nullptr; ++i)
+    {
+        auto suf = juce::String::fromUTF8(suffixes[i]);
+        if (s.endsWithIgnoreCase(suf))
+        {
+            s = s.dropLastCharacters(suf.length()).trimEnd();
+            i = -1; // re-check
+        }
+    }
+
+    // 3. Quitar IDs de YouTube de 11 caracteres al final: [dQw4w9WgXcQ] o (dQw4w9WgXcQ)
+    if (s.endsWith("]") || s.endsWith(")"))
+    {
+        auto openBracket = s.lastIndexOfChar('[');
+        if (openBracket < 0) openBracket = s.lastIndexOfChar('(');
+        if (openBracket >= 0)
+        {
+            auto inner = s.substring(openBracket + 1, s.length() - 1).trim();
+            if (inner.length() == 11)
+            {
+                bool isYtId = true;
+                for (int c = 0; c < inner.length(); ++c)
+                {
+                    auto ch = inner[c];
+                    if (!juce::CharacterFunctions::isLetterOrDigit(ch) && ch != '_' && ch != '-')
+                    {
+                        isYtId = false;
+                        break;
+                    }
+                }
+                if (isYtId)
+                {
+                    s = s.substring(0, openBracket).trimEnd();
+                }
+            }
+        }
+    }
+
+    return s.trim();
+}
+
 juce::String DeckComponent::stripTrackNumberPrefix(const juce::String& filename)
 {
-    auto s = filename.trimStart();
+    auto s = sanitizeTrackString(filename).trimStart();
     int i = 0;
     while (i < s.length() && juce::CharacterFunctions::isDigit(s[i]))
         ++i;
@@ -651,32 +729,22 @@ juce::String DeckComponent::stripTrackNumberPrefix(const juce::String& filename)
     {
         auto rest = s.substring(i).trimStart();
         if (rest.startsWith("- ") || rest.startsWith(juce::String::fromUTF8("– ")) || rest.startsWith(juce::String::fromUTF8("— ")))
-            return rest.substring(2).trimStart();
+            return sanitizeTrackString(rest.substring(2).trimStart());
         if (rest.startsWith(". ") || rest.startsWith("._"))
-            return rest.substring(2).trimStart();
+            return sanitizeTrackString(rest.substring(2).trimStart());
         if (rest.startsWith(".") || rest.startsWith("-"))
-            return rest.substring(1).trimStart();
+            return sanitizeTrackString(rest.substring(1).trimStart());
         if (s[i] == ' ')
-            return rest;
+            return sanitizeTrackString(rest);
     }
     return s;
 }
 
 bool DeckComponent::splitArtistTitle(const juce::String& in, juce::String& outArtist, juce::String& outTitle)
 {
-    auto t = stripTrackNumberPrefix(in).trim();
-    // Quitar coletillas comunes que ensucian el match de género (ignora mayúsculas)
-    static const char* suffixes[] = { " (Official Video)", " (Official Music Video)", " [Official Video]",
-                                      " (Official Audio)", " (Lyric Video)", " (Visualizer)",
-                                      " (Official HD Video)", " (Official Video HD)", " (HD)", " [Official Audio]",
-                                      " (Official Lyric Video)", " (Remastered)", " (Remaster)",
-                                      " (Live)", " (Official Live Video)", nullptr };
-    for (int i = 0; suffixes[i] != nullptr; ++i)
-        t = t.upToLastOccurrenceOf(juce::String::fromUTF8(suffixes[i]), false, true);
+    auto t = sanitizeTrackString(stripTrackNumberPrefix(in));
 
     // Separadores artista-título: guion, en-dash (–, típico de YouTube) y em-dash (—)
-    // Nota: se adopta el prefijo como artista aunque haya artista (canal-uploader
-    // como "apple cider" no es el artista real); el género manda sobre la precisión.
     int sep = t.indexOf(" - ");
     int sepLen = 3;
     if (sep < 0)
@@ -692,12 +760,14 @@ bool DeckComponent::splitArtistTitle(const juce::String& in, juce::String& outAr
     if (sep <= 0)
         return false;
 
-    outArtist = t.substring(0, sep).trim();
+    outArtist = sanitizeTrackString(t.substring(0, sep));
     // Cola "| ..." en vivo: "Song | Live in X" -> "Song"
     outTitle = t.substring(sep + sepLen).trim();
     int pipe = outTitle.indexOf(" | ");
     if (pipe > 0 && outTitle.substring(pipe).toLowerCase().contains("live"))
         outTitle = outTitle.substring(0, pipe).trim();
+
+    outTitle = sanitizeTrackString(outTitle);
     return outArtist.isNotEmpty() && outTitle.isNotEmpty();
 }
 

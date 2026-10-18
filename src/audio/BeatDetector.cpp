@@ -100,14 +100,15 @@ BeatAnalysisResult BeatDetector::analyze(juce::AudioFormatReader* reader)
             if (diffSec > 0.0)
             {
                 double candidate = 60.0 / diffSec;
+                // Normalize candidate tempo into canonical DJ dance range [70.0, 180.0]
+                while (candidate > 0.0 && candidate < 70.0)
+                    candidate *= 2.0;
+                while (candidate > 180.0)
+                    candidate /= 2.0;
+
                 if (candidate >= 70.0 && candidate <= 180.0)
                 {
                     int rounded = (int)std::round(candidate);
-                    bpmHistogram[rounded]++;
-                }
-                else if (candidate * 2.0 >= 70.0 && candidate * 2.0 <= 180.0)
-                {
-                    int rounded = (int)std::round(candidate * 2.0);
                     bpmHistogram[rounded]++;
                 }
             }
