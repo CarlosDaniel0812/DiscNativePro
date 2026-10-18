@@ -1032,6 +1032,10 @@ void LibraryComponent::addTrack(const juce::File& file, const juce::String& fold
         item.artist = artist.isNotEmpty() ? artist : "Artista Local";
         item.album = album.isNotEmpty() ? album : "Local Audio";
 
+        item.title = DeckComponent::sanitizeTrackString(item.title);
+        item.artist = DeckComponent::sanitizeTrackString(item.artist);
+        item.album = DeckComponent::sanitizeTrackString(item.album);
+
         if (item.artist.isEmpty() || item.artist == "Artista Local" || item.artist == "Local Artist")
         {
             juce::String splitArtist, splitTitle;
@@ -1264,6 +1268,8 @@ void LibraryComponent::filterTracks(const juce::String& query)
 
         filteredTracks.push_back(t);
     }
+
+    applySorting();
 
     // Update table header title
     juce::String folderDisplay = currentSelectedFolder;
@@ -1498,6 +1504,66 @@ juce::var LibraryComponent::getDragSourceDescription(const juce::SparseSet<int>&
     }
     if (paths.isEmpty()) return {};
     return paths.joinIntoString("\n");
+}
+
+void LibraryComponent::sortOrderChanged(int newSortColumnId, bool isForwards)
+{
+    currentSortColumnId = newSortColumnId;
+    currentSortForwards = isForwards;
+    applySorting();
+    table.updateContent();
+    table.repaint();
+}
+
+static int parseCamelotOrder(const juce::String& key)
+{
+    auto k = key.trim().toUpperCase();
+    if (k.isEmpty() || k == "--") return 999;
+    int num = k.getIntValue();
+    bool isB = k.endsWith("B");
+    return (num * 2) + (isB ? 1 : 0);
+}
+
+void LibraryComponent::applySorting()
+{
+    if (currentSortColumnId <= 0 || filteredTracks.empty())
+        return;
+
+    std::stable_sort(filteredTracks.begin(), filteredTracks.end(), [this](const TrackItem& a, const TrackItem& b) {
+        int res = 0;
+        switch (currentSortColumnId)
+        {
+            case 3: // TÍTULO
+                res = a.title.compareNatural(b.title);
+                break;
+            case 4: // ARTISTA
+                res = a.artist.compareNatural(b.artist);
+                break;
+            case 5: // ÁLBUM
+                res = a.album.compareNatural(b.album);
+                break;
+            case 6: // DURACIÓN
+                if (a.duration < b.duration) res = -1;
+                else if (a.duration > b.duration) res = 1;
+                break;
+            case 7: // BPM
+                if (a.bpm < b.bpm) res = -1;
+                else if (a.bpm > b.bpm) res = 1;
+                break;
+            case 8: // KEY
+            {
+                int orderA = parseCamelotOrder(a.key);
+                int orderB = parseCamelotOrder(b.key);
+                if (orderA < orderB) res = -1;
+                else if (orderA > orderB) res = 1;
+                else res = a.key.compareNatural(b.key);
+                break;
+            }
+            default:
+                break;
+        }
+        return currentSortForwards ? (res < 0) : (res > 0);
+    });
 }
 
 void LibraryComponent::paint(juce::Graphics& g)

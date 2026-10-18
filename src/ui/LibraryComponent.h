@@ -46,6 +46,7 @@ public:
     juce::Component* refreshComponentForCell(int rowNumber, int columnId, bool isRowSelected, juce::Component* existingComponentToUpdate) override;
     void cellDoubleClicked(int rowNumber, int columnId, const juce::MouseEvent&) override;
     juce::var getDragSourceDescription(const juce::SparseSet<int>& currentlySelectedRows) override;
+    void sortOrderChanged(int newSortColumnId, bool isForwards) override;
 
     // DragAndDropTarget overrides (Automix panel drop zone)
     bool isInterestedInDragSource(const SourceDetails& dragSourceDetails) override;
@@ -139,6 +140,9 @@ private:
 
     std::vector<TrackItem> allTracks;
     std::vector<TrackItem> filteredTracks;
+    void applySorting();
+    int currentSortColumnId { 0 };
+    bool currentSortForwards { true };
 
     // Automix state
     std::vector<TrackItem> automixQueue;
